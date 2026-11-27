@@ -96,6 +96,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .key.op{color:var(--accent)}
 .key.enter{background:var(--accent);color:var(--accent-ink)}
 .key.g{background:var(--g);color:var(--on-state)} .key.y{background:var(--y);color:var(--on-state)} .key.r{background:var(--r);color:var(--on-state);opacity:.75}
+.key.off{opacity:.3;cursor:not-allowed}
 .key:active{transform:translateY(1px)}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;font-size:.92rem;line-height:1.65}
 .panel h2{font-family:var(--f-display);font-size:1.1rem;margin:0}
@@ -335,7 +336,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
         <ul>
           <li><b>Free</b>：沒有限制，任何 9 格都能送出。</li>
           <li><b>Locked</b>：猜到的綠色必須留在原位，出現過的黃色字元一定要用上（看之前某排有幾個黃或綠，之後至少要用那麼多個）。</li>
-          <li><b>Strict</b>：Locked 的規則，再加上必須是成立的等式（後面是 ✓）才能送出。</li>
+          <li><b>Strict</b>：Locked 的規則，再加上必須是成立的等式（後面是 ✓）才能送出，而且紅色（確定沒有）的字元不能再用，按鍵會鎖住。</li>
           <li><b>Daily</b>：每天一題，所有人同一題，只要求必須是成立的等式，不用照綠色和黃色。台灣時間換日，可以從日曆補玩以前的天數。</li>
         </ul></li>
       <li>Free、Locked、Strict 裡面再分 <b>Easy、Medium、Hard</b> 三種難度，每種 1000 題。三種規則用的是<b>同一批題目，但順序不一樣</b>，所以 Free · Easy #1 不一定是 Locked · Easy #1，答案不能直接照抄。</li>
@@ -614,7 +615,7 @@ function saveProgress() {
 /* rule level: free = anything goes; locked = keep greens, use yellows; strict = locked + must be a valid equation; daily = valid equation only */
 let friendRule = "free";
 const rule = () => (isBattle ? (B.room && B.room.rule) || "free" : custom ? friendRule : isDaily ? "daily" : mode);
-const RULE_TIP = { free: "", locked: " · 綠色留原位、黃色要用上", strict: " · 綠黃要用上、必須是成立的等式", daily: " · 必須是成立的等式" };
+const RULE_TIP = { free: "", locked: " · 綠色留原位、黃色要用上", strict: " · 綠黃要用上、紅色不能用、必須是成立的等式", daily: " · 必須是成立的等式" };
 function baseStatus() {
   const tag = RULE_TIP[rule()];
   if (isBattle) return `對戰 · 第 ${pNo} 回合 · ${MODE_NAME[rule()]}` + tag;
@@ -637,6 +638,8 @@ function paintKeys() {
   document.querySelectorAll(".key[data-k]").forEach(k => {
     k.classList.remove("g", "y", "r");
     const st = view === "game" && !done && !panelOpen ? keyState[k.dataset.k] : null; if (st) k.classList.add(st); // colors only while a puzzle is in play
+    const off = st === "r" && rule() === "strict"; // Strict: a letter known to be absent can't be typed
+    k.classList.toggle("off", off); k.setAttribute("aria-disabled", off);
   });
 }
 function render(animateRow = -1) {
@@ -725,6 +728,7 @@ function press(k) {
     B.pos = editRow(B.mk, B.pos, k); B.err = ""; return paintBattle();
   }
   if (view !== "game" || done || panelOpen) return;
+  if (ALPHA.includes(k) && rule() === "strict" && keyState[k] === "r") { setStatus(`Strict：答案裡沒有 ${show(k)}，不能再用`, "err"); return; }
   if (ALPHA.includes(k) && !startT) { startT = Date.now(); segT = startT; } // the clock starts at the first keystroke
   if (k === "Enter") return submit();
   if (k === "Backspace") setStatus(baseStatus());
@@ -740,6 +744,7 @@ function strictError(g) {
     for (let i = 0; i < COLS; i++) if (res[i] !== "r") cnt[prev[i]] = (cnt[prev[i]] || 0) + 1;
     for (const c in cnt) need[c] = Math.max(need[c] || 0, cnt[c]);
   }
+  if (rule() === "strict") for (const c of g) if (keyState[c] === "r") return `Strict：答案裡沒有 ${show(c)}，不能再用`;
   for (const c in need) {
     const have = [...g].filter(x => x === c).length;
     if (have < need[c]) return `${MODE_NAME[rule()]}：必須用到 ${need[c]} 個 ${show(c)}`;
@@ -811,7 +816,7 @@ function renderPicker() {
   $("picker").innerHTML = `
     <div class="phead"><h2>${MODE_NAME[mode]} · ${DIFF_NAME[diff]}</h2><span>${finished} / ${N} 題完成</span></div>
     <div class="rtabs dtabs" role="tablist" aria-label="難度">${Object.keys(DIFF_NAME).map(d => `<button type="button" class="rtab${d === diff ? " on" : ""}" data-diff="${d}">${DIFF_NAME[d]}</button>`).join("")}</div>
-    <p class="note ptip">${{ free: "Free：沒有限制，任何 9 格都能送出。", locked: "Locked：綠色要留在原位，黃色字元一定要用上。", strict: "Strict：綠黃要用上，而且必須是成立的等式才能送出。" }[mode]}</p>
+    <p class="note ptip">${{ free: "Free：沒有限制，任何 9 格都能送出。", locked: "Locked：綠色要留在原位，黃色字元一定要用上。", strict: "Strict：綠黃要用上、紅色的字元不能再用，而且必須是成立的等式才能送出。" }[mode]}</p>
     <div class="pactions">
       ${next ? `<button type="button" class="tb primary" data-n="${next}">${states[next] === "half" ? "繼續" : "開始"} 第 ${next} 題</button>` : `<span class="note">全部做完了！</span>`}
       <span class="jump"><label for="jumpIn">跳到第</label><input id="jumpIn" type="number" inputmode="numeric" min="1" max="${N}" placeholder="${next || 1}"><span>題</span><button type="button" class="tb" id="jumpGo">開始</button></span>
