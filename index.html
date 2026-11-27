@@ -1041,7 +1041,8 @@ const PROG_RE = /^p:(free|locked|strict|daily|friend):/;
 const cleanRec = r => ({
   g: (Array.isArray(r.g) ? r.g : []).filter(x => typeof x === "string" && x.length === COLS).slice(0, ROWS),
   c: Array.isArray(r.c) && r.c.length === COLS ? r.c.map(x => (typeof x === "string" && ALPHA.includes(x) ? x : "")) : Array(COLS).fill(""),
-  t: +r.t || 0, w: r.w ? 1 : 0, st: +r.st || 0, am: Math.round(+r.am || 0),
+  t: +r.t || 0, w: r.w ? 1 : 0, st: +r.st || 0,
+  am: Math.round(r.am != null ? +r.am || 0 : r.t && r.st ? Math.max(0, r.t - r.st) : 0), // older records had no active time: use the wall time
 });
 /* which copy of a puzzle to keep: a finished one beats an unfinished one (earliest finish wins); otherwise the one with more rows */
 function betterRec(a, b) {
