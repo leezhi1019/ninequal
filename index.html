@@ -170,6 +170,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .rtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:4px}
 .rtab{background:transparent;color:var(--muted);font-weight:700;font-size:.86rem;padding:7px 4px;border-radius:7px}
 .rtab.on{background:var(--accent);color:var(--accent-ink)}
+.inapp{display:flex;flex-direction:column;gap:6px;background:var(--key);border:1px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:.9rem;line-height:1.6}
+.inapp p{margin:0}
+.inapp a.tb{text-decoration:none;display:inline-block;border-radius:8px;font-weight:700}
+.urlbox{font-family:var(--f-tile);font-size:.78rem;color:var(--muted);overflow-wrap:anywhere;user-select:all}
+.note.small{font-size:.8rem;margin:0}
 .rcats{grid-template-columns:repeat(4,1fr)}
 .rchips{display:flex;flex-direction:column;gap:8px}
 .crow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
@@ -1048,13 +1053,41 @@ async function onFinishLB() {
   if (!custom) await pushUser();
   paintResultLB();
 }
+/* Google blocks sign-in inside apps' built-in browsers (LINE, IG, FB...) */
+const IN_APP = (() => { try { return /Line\/|Instagram|FBAN|FBAV|FB_IAB|Messenger|MicroMessenger|Threads|TikTok|musical_ly|Twitter|; wv\)/i.test(navigator.userAgent); } catch (e) { return false; } })();
+const IS_LINE = (() => { try { return /Line\//i.test(navigator.userAgent); } catch (e) { return false; } })();
+function siteUrl() { try { return location.origin + location.pathname + location.hash; } catch (e) { return SITE; } }
+function inAppBox() {
+  const box = document.createElement("div"); box.className = "inapp";
+  const t = document.createElement("p"); t.innerHTML = "<b>請用瀏覽器開啟才能登入</b>";
+  const d = document.createElement("p");
+  d.textContent = IS_LINE ? "你現在是在 LINE 裡打開的，Google 不允許在這裡登入。按下面的按鈕，會改用手機的瀏覽器打開。"
+    : "你現在是在 App 裡打開的（例如 IG、FB），Google 不允許在這裡登入。請點右上角的「⋯」或分享圖示，選「用瀏覽器開啟」（iPhone 選 Safari，Android 選 Chrome）。也可以複製連結，貼到瀏覽器打開。";
+  const row = document.createElement("div"); row.className = "inrow";
+  if (IS_LINE) {
+    const a = document.createElement("a"); a.className = "tb primary"; a.textContent = "用瀏覽器打開";
+    a.href = location.origin + location.pathname + "?openExternalBrowser=1" + location.hash; a.target = "_top";
+    row.appendChild(a);
+  }
+  const c = document.createElement("button"); c.type = "button"; c.className = "tb"; c.textContent = "複製連結";
+  const u = document.createElement("code"); u.className = "urlbox"; u.textContent = siteUrl();
+  c.onclick = () => {
+    const done = () => { c.textContent = "已複製"; };
+    try { navigator.clipboard.writeText(siteUrl()).then(done, () => { const r = document.createRange(); r.selectNodeContents(u); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(r); c.textContent = "請長按複製"; }); } catch (e) {}
+  };
+  row.appendChild(c);
+  box.append(t, d, row, u);
+  return box;
+}
 function renderAcct() {
   const el = $("acct"); el.innerHTML = "";
   if (!fb) { el.textContent = lbFail ? "排行榜暫時連不上，請檢查網路後重新整理。" : "排行榜載入中…"; return; }
   if (!me) {
     const p = document.createElement("p"); p.className = "note"; p.textContent = "不用登入也能看排行榜。想上榜的話，用 Google 登入，你在這台裝置玩過的 Daily 成績會一起上傳。";
+    if (IN_APP) { el.append(p, inAppBox()); return; }
     const b = document.createElement("button"); b.type = "button"; b.className = "tb primary"; b.textContent = "用 Google 登入"; b.onclick = signIn;
-    el.append(p, b); return;
+    const h = document.createElement("p"); h.className = "note small"; h.textContent = "在 LINE、IG、FB 裡打開的話，要先改用瀏覽器（Safari 或 Chrome）開啟才能登入。";
+    el.append(p, b, h); return;
   }
   const who = document.createElement("span"); who.className = "who"; who.textContent = `已登入：${myName}`;
   const ren = document.createElement("button"); ren.type = "button"; ren.className = "tb"; ren.textContent = "改名";
@@ -1302,7 +1335,7 @@ function paintResultLB() {
   el.hidden = !(LB_ON && fb && done && isDaily);
   if (el.hidden) return;
   if (!me) {
-    const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.textContent = "用 Google 登入，把成績放上排行榜"; b.onclick = signIn; el.appendChild(b);
+    const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.textContent = "用 Google 登入，把成績放上排行榜"; b.onclick = () => (IN_APP ? setPanel("ranks") : signIn()); el.appendChild(b);
   } else {
     const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.textContent = `看 Daily #${pNo} 排行榜`;
     b.onclick = () => { lbBoard = "daily"; lbDay = pNo; lbKeep = true; setPanel("ranks"); }; el.appendChild(b);
