@@ -33,6 +33,18 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
+    // users/{uid}/progress/{puzzle}: each player's saved puzzles, private to that player
+    match /users/{uid}/progress/{pid} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['g', 'c', 't', 'w', 'st', 'am'])
+        && request.resource.data.g is list && request.resource.data.g.size() <= 6
+        && request.resource.data.c is list && request.resource.data.c.size() == 9
+        && request.resource.data.t is number && request.resource.data.t >= 0
+        && request.resource.data.w is int && (request.resource.data.w == 0 || request.resource.data.w == 1)
+        && request.resource.data.st is number && request.resource.data.am is number && request.resource.data.am >= 0;
+    }
+
     // daily/{day}/scores/{uid}: one score per player per Daily puzzle
     match /daily/{day}/scores/{uid} {
       allow read: if true;

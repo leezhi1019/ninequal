@@ -689,7 +689,7 @@ function submit(replay = false) {
   if (replay) return;
   if (done) { actMs = playMs(); segT = 0; fin = { t: Date.now(), w: win ? 1 : 0 }; showResult(true); }
   render(row);
-  if (done) onFinishLB();
+  if (done) onFinishLB(); else cloudSave(pKey);
 }
 
 /* ---------- views: puzzle picker vs. game ---------- */
@@ -1029,8 +1029,74 @@ function syncErr(e) {
 }
 function syncOk() { lbNote(""); $("syncNote").hidden = true; }
 /* push this device's results: every finished Daily (create-only) + my totals */
+/* ---------- cloud save: one Google account = one record, on every device ---------- */
+const PROG_RE = /^p:(free|locked|strict|daily|friend):/;
+const cleanRec = r => ({
+  g: (Array.isArray(r.g) ? r.g : []).filter(x => typeof x === "string" && x.length === COLS).slice(0, ROWS),
+  c: Array.isArray(r.c) && r.c.length === COLS ? r.c.map(x => (typeof x === "string" && ALPHA.includes(x) ? x : "")) : Array(COLS).fill(""),
+  t: +r.t || 0, w: r.w ? 1 : 0, st: +r.st || 0, am: Math.round(+r.am || 0),
+});
+/* which copy of a puzzle to keep: a finished one beats an unfinished one (earliest finish wins); otherwise the one with more rows */
+function betterRec(a, b) {
+  if (!a) return b; if (!b) return a;
+  if (!!a.t !== !!b.t) return a.t ? a : b;
+  if (a.t && b.t) return a.t <= b.t ? a : b;
+  return (b.g || []).length > (a.g || []).length ? b : a;
+}
+const sameRec = (a, b) => !!a && !!b && JSON.stringify([a.g, a.t, a.w]) === JSON.stringify([b.g, b.t, b.w]);
+function localProgress() {
+  const out = {};
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) || ""; if (PROG_RE.test(k)) { const v = store.get(k, null); if (v) out[k] = v; } } } catch (e) {}
+  return out;
+}
+/* merge this device with the cloud both ways */
+async function syncProgress() {
+  const col = fdb.collection("users").doc(me.uid).collection("progress");
+  const snap = await col.get(), cloud = {};
+  snap.forEach(d => { cloud["p:" + d.id] = d.data(); });
+  const local = localProgress(), up = []; let changed = false;
+  new Set([...Object.keys(local), ...Object.keys(cloud)]).forEach(k => {
+    if (!PROG_RE.test(k)) return;
+    const keep = betterRec(local[k], cloud[k]);
+    if (keep !== local[k] && !sameRec(keep, local[k])) { store.set(k, cleanRec(keep)); changed = true; }
+    if (keep !== cloud[k] && !sameRec(keep, cloud[k])) up.push([k, cleanRec(keep)]);
+  });
+  for (let i = 0; i < up.length; i += 400) {
+    const batch = fdb.batch();
+    up.slice(i, i + 400).forEach(([k, v]) => batch.set(col.doc(k.slice(2)), v));
+    await batch.commit();
+  }
+  return changed;
+}
+/* save one puzzle right after a row is sent */
+async function cloudSave(key) {
+  if (!me || !fdb || !key || !PROG_RE.test(key)) return;
+  const v = store.get(key, null); if (!v) return;
+  try { await fdb.collection("users").doc(me.uid).collection("progress").doc(key.slice(2)).set(cleanRec(v)); } catch (e) { syncErr(e); }
+}
+/* re-show whatever is on screen after the cloud filled in records */
+function refreshAfterSync() {
+  if (view === "picker") renderPicker();
+  else if (view === "game") {
+    if (custom) startGame("friend", 0, answer, pKey);
+    else startGame(isDaily ? "daily" : track(), pNo, answer, pKey);
+  }
+}
+/* sign out: save everything first, then clear this device so the next person starts clean */
+async function signOutAll() {
+  lbNote("正在把紀錄存到雲端…");
+  try { await syncProgress(); } catch (e) { lbNote("有紀錄還沒存到雲端，為了不弄丟，先不登出。請確認網路後再試一次。"); return; }
+  try {
+    const ks = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) || ""; if (PROG_RE.test(k) || /^daily(cur)?-/.test(k)) ks.push(k); }
+    ks.forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+  lbNote("");
+  await fb.auth().signOut();
+  showPicker();
+}
 async function syncAll() {
   if (!me || synced) return; synced = true;
+  try { if (await syncProgress()) refreshAfterSync(); syncOk(); } catch (e) { syncErr(e); }
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const m = /^p:daily:(\d+)$/.exec(localStorage.key(i) || ""); if (!m) continue;
@@ -1052,6 +1118,7 @@ async function submitDaily(n, p) {
 /* called when a puzzle finishes (not on replay) */
 async function onFinishLB() {
   if (!me) return;
+  await cloudSave(pKey);
   if (isDaily) await submitDaily(pNo, store.get(pKey, null));
   if (!custom) await pushUser();
   paintResultLB();
@@ -1086,7 +1153,7 @@ function renderAcct() {
   const el = $("acct"); el.innerHTML = "";
   if (!fb) { el.textContent = lbFail ? "排行榜暫時連不上，請檢查網路後重新整理。" : "排行榜載入中…"; return; }
   if (!me) {
-    const p = document.createElement("p"); p.className = "note"; p.textContent = "不用登入也能看排行榜。想上榜的話，用 Google 登入，你在這台裝置玩過的 Daily 成績會一起上傳。";
+    const p = document.createElement("p"); p.className = "note"; p.textContent = "不用登入也能看排行榜。用 Google 登入後，你玩過的紀錄會存在帳號裡，換手機、換瀏覽器登入同一個帳號都看得到，成績也會上排行榜。";
     if (IN_APP) { el.append(p, inAppBox()); return; }
     const b = document.createElement("button"); b.type = "button"; b.className = "tb primary"; b.textContent = "用 Google 登入"; b.onclick = signIn;
     const h = document.createElement("p"); h.className = "note small"; h.textContent = "在 LINE、IG、FB 裡打開的話，要先改用瀏覽器（Safari 或 Chrome）開啟才能登入。";
@@ -1095,7 +1162,7 @@ function renderAcct() {
   const who = document.createElement("span"); who.className = "who"; who.textContent = `已登入：${myName}`;
   const ren = document.createElement("button"); ren.type = "button"; ren.className = "tb"; ren.textContent = "改名";
   const out = document.createElement("button"); out.type = "button"; out.className = "tb"; out.textContent = "登出";
-  out.onclick = () => fb.auth().signOut();
+  out.onclick = signOutAll;
   ren.onclick = () => {
     el.innerHTML = "";
     const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 20; inp.value = myName; inp.id = "nameIn"; inp.setAttribute("aria-label", "排行榜上的名字");
