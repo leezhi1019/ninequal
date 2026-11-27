@@ -170,6 +170,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .rtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:4px}
 .rtab{background:transparent;color:var(--muted);font-weight:700;font-size:.86rem;padding:7px 4px;border-radius:7px}
 .rtab.on{background:var(--accent);color:var(--accent-ink)}
+.rsel{display:flex;flex-direction:column;gap:4px;font-size:.84rem;font-weight:700;color:var(--muted)}
+.rsel select{font-family:var(--f-body);font-size:.98rem;font-weight:500;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);max-width:100%}
+#rdesc{margin:0}
 .rhead{display:flex;align-items:center;justify-content:center;gap:12px;font-size:.88rem;color:var(--muted);text-align:center;flex-wrap:wrap}
 .rhead .tb{padding:3px 12px}
 .rhead .tb:disabled{opacity:.35;cursor:default}
@@ -213,14 +216,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <h2>排行榜</h2>
     <div class="acct" id="acct"></div>
     <div class="note" id="lbNote" hidden></div>
-    <div class="rtabs" role="tablist" aria-label="排行榜種類">
-      <button type="button" class="rtab" data-rt="daily">Daily 每天排名</button>
-      <button type="button" class="rtab" data-rt="streak">Daily 連勝</button>
-      <button type="button" class="rtab" data-rt="solved">總題數</button>
-    </div>
+    <label class="rsel" for="rsel"><span>看哪一種排名</span><select id="rsel"></select></label>
+    <p class="note" id="rdesc"></p>
     <div class="rhead" id="rhead"></div>
     <div class="rlist" id="rlist"></div>
-    <p class="note">Daily 排名先比猜中次數，同次數再比花的時間（從你開始輸入算起）。名字預設是你的 Google 名稱，所有人都看得到，可以按「改名」換成暱稱。</p>
+    <p class="note">排名用的是你在這台裝置上玩的紀錄，登入後每完成一題會自動更新。所有排名同分時會一路往下比，連「誰先完成」都一樣才並列名次。名字預設是你的 Google 名稱，所有人都看得到，可以按「改名」換成暱稱。</p>
   </section>
   <section class="panel" id="stats" hidden>
     <h2>統計</h2>
@@ -968,11 +968,12 @@ const FB_CONFIG = {
   appId: "1:1086512489274:web:5608fe9fc378a998de2603",
 };
 const FB_V = "10.12.2";
-let lbFail = false, lbKeep = false, fb = null, fdb = null, me = null, myName = "", lbTab = "daily", lbDay = 0, synced = false;
+let lbFail = false, lbKeep = false, fb = null, fdb = null, me = null, myName = "", lbDay = 0, synced = false;
 const loadScript = src => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
 async function initLB() {
   if (!LB_ON) return;
   $("btnRanks").hidden = false;
+  buildBoardSelect();
   try {
     for (const m of ["app", "auth", "firestore"]) await loadScript(`https://www.gstatic.com/firebasejs/${FB_V}/firebase-${m}-compat.js`);
     fb = window.firebase; fb.initializeApp(FB_CONFIG); fdb = fb.firestore();
@@ -1019,22 +1020,6 @@ async function submitDaily(n, p) {
     await ref.set({ name: myName.slice(0, 40), guesses: g, ms, win: !!p.w, key: g * 1e8 + ms, at: fb.firestore.FieldValue.serverTimestamp() });
   } catch (e) {}
 }
-async function pushUser() {
-  if (!me || !fdb) return;
-  const st = computeStats(), t = todayNo();
-  const won = new Set(); // Daily wins by day number, for the streak's last day
-  try { for (let i = 0; i < localStorage.length; i++) { const m = /^p:daily:(\d+)$/.exec(localStorage.key(i) || ""); if (m) { const p = store.get(m[0], null); if (p && p.t && p.w) won.add(+m[1]); } } } catch (e) {}
-  const streakDay = won.has(t) ? t : won.has(t - 1) ? t - 1 : 0;
-  try {
-    await fdb.collection("users").doc(me.uid).set({
-      name: myName.slice(0, 40), solved: st.free.won + st.locked.won + st.strict.won,
-      tries: st.free.tries + st.locked.tries + st.strict.tries,
-      ms: Math.min(1e12, Math.round(st.free.ms + st.locked.ms + st.strict.ms)),
-      dailyStreak: st.daily.streak, dailyBest: st.daily.best, streakDay,
-      updatedAt: fb.firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (e) {}
-}
 /* called when a puzzle finishes (not on replay) */
 async function onFinishLB() {
   if (!me) return;
@@ -1069,55 +1054,183 @@ function renderAcct() {
   el.append(who, ren, out);
 }
 const fmtMs = ms => { const s = Math.round(ms / 1000); return s < 60 ? `${s} 秒` : s < 3600 ? `${Math.floor(s / 60)} 分 ${s % 60} 秒` : `${Math.floor(s / 3600)} 小時以上`; };
+/* ---------- what each player uploads: computed from this device's finished puzzles ---------- */
+const RULES = ["free", "locked", "strict"], DIFFS = ["easy", "medium", "hard"];
+const DIFF_W = { easy: 1, medium: 2, hard: 4 }, RULE_W = { free: 1, locked: 2, strict: 3 };
+const GUESS_X = g => (g <= 1 ? 2 : g === 2 ? 1.5 : g === 3 ? 1.2 : 1);
+const r1 = x => Math.round(x * 10) / 10;
+function weekKey(t) { // Monday of the Taipei week, e.g. "2026-11-23"
+  const d = new Date(t + 8 * 3600e3), back = (d.getUTCDay() + 6) % 7;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)).toISOString().slice(0, 10);
+}
+const monthKey = t => new Date(t + 8 * 3600e3).toISOString().slice(0, 7);
+function computeBoards() {
+  const tr = {}; RULES.forEach(r => DIFFS.forEach(d => (tr[`${r}_${d}`] = [0, 0, 0, 0]))); // played, won, guesses, ms
+  const now = Date.now(), wk = weekKey(now), mo = monthKey(now), fins = [];
+  let p1 = 0, p2 = 0, p2w = 0, p2m = 0, lf = 0, dp = 0, dpl = 0, dwo = 0, dtr = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      let m = /^p:(free|locked|strict):(easy|medium|hard):(\d+)$/.exec(key);
+      if (m) {
+        const p = store.get(key, null); if (!p || !p.t) continue;
+        const g = (p.g || []).length, w = !!p.w, ms = p.st ? Math.max(0, p.t - p.st) : 0, a = tr[`${m[1]}_${m[2]}`];
+        a[0]++; a[2] += g; a[3] += ms; lf = Math.max(lf, p.t); fins.push({ t: p.t, w });
+        if (w) {
+          a[1]++;
+          const pts = RULE_W[m[1]] * DIFF_W[m[2]], x = pts * GUESS_X(g);
+          p1 += pts; p2 += x;
+          if (weekKey(p.t) === wk) p2w += x;
+          if (monthKey(p.t) === mo) p2m += x;
+        }
+        continue;
+      }
+      m = /^p:daily:(\d+)$/.exec(key);
+      if (m) {
+        const p = store.get(key, null); if (!p || !p.t) continue;
+        const g = (p.g || []).length;
+        dpl++; lf = Math.max(lf, p.t);
+        if (p.w) { dwo++; dtr += g; dp += 7 - g; } else dtr += 7;
+      }
+    }
+  } catch (e) {}
+  fins.sort((a, b) => a.t - b.t);
+  let run = 0, nb = 0; fins.forEach(f => { run = f.w ? run + 1 : 0; nb = Math.max(nb, run); });
+  Object.values(tr).forEach(a => (a[3] = Math.round(a[3])));
+  return { tr, p1, p2: r1(p2), wk, p2w: r1(p2w), mo, p2m: r1(p2m), ns: run, nb, dp, dpl, dwo, dtr, lf: Math.round(lf) };
+}
+async function pushUser() {
+  if (!me || !fdb) return;
+  const b = computeBoards(), st = computeStats(), t = todayNo();
+  const won = new Set();
+  try { for (let i = 0; i < localStorage.length; i++) { const m = /^p:daily:(\d+)$/.exec(localStorage.key(i) || ""); if (m) { const p = store.get(m[0], null); if (p && p.t && p.w) won.add(+m[1]); } } } catch (e) {}
+  const streakDay = won.has(t) ? t : won.has(t - 1) ? t - 1 : 0;
+  try {
+    await fdb.collection("users").doc(me.uid).set({
+      name: myName.slice(0, 40), ...b,
+      dailyStreak: st.daily.streak, dailyBest: st.daily.best, streakDay,
+      updatedAt: fb.firestore.FieldValue.serverTimestamp(),
+    });
+    usersCache.t = 0;
+  } catch (e) {}
+}
+
+/* ---------- the boards. keys: compared left to right, smaller first (bigger-is-better values are negated); last tie-break is who finished first ---------- */
+const TRK = (u, r, d) => (u.tr && Array.isArray(u.tr[`${r}_${d}`]) ? u.tr[`${r}_${d}`] : [0, 0, 0, 0]);
+function agg(u, rules = RULES, diffs = DIFFS) {
+  let pl = 0, wo = 0, tri = 0, ms = 0;
+  rules.forEach(r => diffs.forEach(d => { const a = TRK(u, r, d); pl += a[0]; wo += a[1]; tri += a[2]; ms += a[3]; }));
+  return { pl, wo, tri, ms };
+}
+const TIE = "同分依序比：猜的總次數少、總時間短，最後比誰先完成。";
+const countBoard = (id, name, rules, diffs, what) => ({
+  id, group: "題目", name, desc: `${what}答對的題數。${TIE}`,
+  stat: u => agg(u, rules, diffs), need: s => s.wo > 0, keys: s => [-s.wo, s.tri, s.ms], val: s => `${s.wo} 題 · ${s.tri} 次`,
+});
+const BOARDS = [
+  { id: "daily", group: "Daily", name: "Daily 每天排名", desc: "某一天的 Daily：先比猜中次數，同次數再比花的時間（從第一次輸入算起）。沒猜到的排在最後。可以切換看前幾天。" },
+  { id: "dstreak", group: "Daily", name: "Daily 連勝", desc: "連續幾天的 Daily 都猜中，要接到今天或昨天才算。同天數比最長連勝紀錄，再比誰先完成。",
+    stat: u => u, need: u => u.dailyStreak > 0 && u.streakDay >= todayNo() - 1, keys: u => [-u.dailyStreak, -(u.dailyBest || 0)], val: u => `${u.dailyStreak} 天` },
+  { id: "dpts", group: "Daily", name: "Daily 總分", desc: "每天 Daily 猜中給分：1 次 6 分、2 次 5 分……6 次 1 分，沒猜到 0 分，全部加總。同分比猜中天數多、總次數少，再比誰先完成。",
+    stat: u => u, need: u => (u.dp || 0) > 0, keys: u => [-u.dp, -(u.dwo || 0), u.dtr || 0], val: u => `${u.dp} 分 · ${u.dwo || 0} 天` },
+  { id: "davg", group: "Daily", name: "Daily 平均次數", desc: "Daily 平均幾次猜中（沒猜到算 7 次），至少玩 7 天才上榜。越少越前面；同平均比玩的天數多，再比誰先完成。",
+    stat: u => ({ avg: (u.dtr || 0) / (u.dpl || 1), pl: u.dpl || 0 }), need: s => s.pl >= 7, keys: s => [s.avg, -s.pl], val: s => `平均 ${s.avg.toFixed(2)} 次 · ${s.pl} 天` },
+
+  { id: "pts", group: "題目", name: "積分", desc: "每題答對依難度和規則給分：Easy 1、Medium 2、Hard 4 分，再乘上 Free ×1、Locked ×2、Strict ×3。同分依序比：Hard 題數多、猜的總次數少、總時間短，最後比誰先完成。",
+    stat: u => ({ p1: u.p1 || 0, hard: agg(u, RULES, ["hard"]).wo, ...agg(u) }), need: s => s.p1 > 0, keys: s => [-s.p1, -s.hard, s.tri, s.ms], val: s => `${s.p1} 分` },
+  { id: "pts2", group: "題目", name: "積分＋猜得少加分", desc: "跟「積分」一樣，但每題再依猜中次數加倍：1 次 ×2、2 次 ×1.5、3 次 ×1.2、4 次以上 ×1。同分比基本積分高，再比總次數少、總時間短、誰先完成。",
+    stat: u => ({ p2: u.p2 || 0, p1: u.p1 || 0, ...agg(u) }), need: s => s.p2 > 0, keys: s => [-s.p2, -s.p1, s.tri, s.ms], val: s => `${s.p2} 分` },
+  { id: "week", group: "題目", name: "本週積分", desc: "這一週（台灣時間週一開始）拿到的「積分＋猜得少加分」，每週一歸零。同分比誰先完成。",
+    stat: u => ({ v: u.wk === weekKey(Date.now()) ? u.p2w || 0 : 0 }), need: s => s.v > 0, keys: s => [-s.v], val: s => `${s.v} 分` },
+  { id: "month", group: "題目", name: "本月積分", desc: "這個月拿到的「積分＋猜得少加分」，每月 1 號歸零。同分比誰先完成。",
+    stat: u => ({ v: u.mo === monthKey(Date.now()) ? u.p2m || 0 : 0 }), need: s => s.v > 0, keys: s => [-s.v], val: s => `${s.v} 分` },
+  countBoard("solved", "總答對題數", RULES, DIFFS, "Free、Locked、Strict 全部難度加起來"),
+  countBoard("hardonly", "只算 Hard", RULES, ["hard"], "三種規則的 Hard 加起來"),
+  ...DIFFS.map(d => countBoard(`d_${d}`, `${DIFF_NAME[d]} 題數`, RULES, [d], `三種規則的 ${DIFF_NAME[d]} 加起來`)),
+  ...RULES.map(r => countBoard(`r_${r}`, `${MODE_NAME[r]} 題數`, [r], DIFFS, `${MODE_NAME[r]} 三種難度加起來`)),
+  ...RULES.flatMap(r => DIFFS.map(d => countBoard(`t_${r}_${d}`, `${MODE_NAME[r]} · ${DIFF_NAME[d]} 題數`, [r], [d], `只算 ${MODE_NAME[r]} · ${DIFF_NAME[d]} `))),
+  { id: "avg", group: "題目", name: "平均猜幾次", desc: "每題平均猜幾次（沒猜到算用掉的 6 次），至少答對 20 題才上榜。越少越前面；同平均比答對題數多，再比誰先完成。",
+    stat: u => { const s = agg(u); return { ...s, avg: s.tri / (s.pl || 1) }; }, need: s => s.wo >= 20, keys: s => [s.avg, -s.wo], val: s => `平均 ${s.avg.toFixed(2)} 次 · ${s.wo} 題` },
+  { id: "rate", group: "題目", name: "勝率", desc: "答對題數 ÷ 玩完的題數，至少玩完 20 題才上榜。同勝率比玩的題數多，再比總次數少、誰先完成。",
+    stat: u => { const s = agg(u); return { ...s, rate: s.wo / (s.pl || 1) }; }, need: s => s.pl >= 20, keys: s => [-s.rate, -s.pl, s.tri], val: s => `${Math.round(s.rate * 1000) / 10}% · ${s.pl} 題` },
+  { id: "speed", group: "題目", name: "平均速度", desc: "每題平均花多少時間（從第一次輸入算起），至少答對 20 題才上榜。越快越前面；同速度比答對題數多，再比誰先完成。",
+    stat: u => { const s = agg(u); return { ...s, sp: s.ms / (s.pl || 1) }; }, need: s => s.wo >= 20 && s.ms > 0, keys: s => [s.sp, -s.wo], val: s => `每題 ${fmtMs(s.sp)} · ${s.wo} 題` },
+  { id: "nstreak", group: "題目", name: "連勝", desc: "Free、Locked、Strict 的題目，照完成的順序連續答對幾題（不算 Daily）。同連勝比最長連勝紀錄，再比誰先完成。",
+    stat: u => ({ ns: u.ns || 0, nb: u.nb || 0 }), need: s => s.ns > 0, keys: s => [-s.ns, -s.nb], val: s => `${s.ns} 題` },
+];
+let lbBoard = store.get("lbBoard", "daily"); if (!BOARDS.some(b => b.id === lbBoard)) lbBoard = "daily";
+const usersCache = { t: 0, docs: [] };
+async function getUsers() {
+  if (Date.now() - usersCache.t < 30000) return usersCache.docs;
+  const snap = await fdb.collection("users").limit(1000).get();
+  usersCache.docs = snap.docs.map(d => ({ id: d.id, ...d.data() })); usersCache.t = Date.now();
+  return usersCache.docs;
+}
+/* rank a list: same keys and same finish time = shared place */
+function rankRows(board, users) {
+  const rows = users.map(u => ({ u, s: board.stat(u) })).filter(r => board.need(r.s))
+    .map(r => ({ id: r.u.id, name: r.u.name, val: board.val(r.s), k: [...board.keys(r.s), r.u.lf || Infinity] }));
+  const cmp = (a, b) => { for (let i = 0; i < a.k.length; i++) if (a.k[i] !== b.k[i]) return a.k[i] - b.k[i]; return 0; };
+  rows.sort(cmp);
+  rows.forEach((r, i) => (r.rank = i && cmp(r, rows[i - 1]) === 0 ? rows[i - 1].rank : i + 1));
+  return rows;
+}
+function buildBoardSelect() {
+  const sel = $("rsel"); sel.innerHTML = "";
+  ["Daily", "題目"].forEach(g => {
+    const og = document.createElement("optgroup"); og.label = g === "Daily" ? "Daily" : "題目（Free / Locked / Strict）";
+    BOARDS.filter(b => b.group === g).forEach(b => { const o = document.createElement("option"); o.value = b.id; o.textContent = b.name; og.appendChild(o); });
+    sel.appendChild(og);
+  });
+  sel.value = lbBoard;
+  sel.onchange = () => { lbBoard = sel.value; store.set("lbBoard", lbBoard); renderRanks(); };
+}
 async function renderRanks() {
   if (!LB_ON) return;
-  document.querySelectorAll(".rtab").forEach(b => b.classList.toggle("on", b.dataset.rt === lbTab));
+  const board = BOARDS.find(b => b.id === lbBoard) || BOARDS[0];
+  $("rsel").value = board.id; $("rdesc").textContent = board.desc;
   const head = $("rhead"), list = $("rlist");
   head.innerHTML = ""; list.textContent = fdb ? "載入中…" : lbFail ? "" : "排行榜載入中…";
   if (!fdb) return;
   const tNo = todayNo();
-  if (!lbDay) lbDay = tNo;
   let rows = [], mine = null;
   try {
-    if (lbTab === "daily") {
+    if (board.id === "daily") {
+      if (!lbDay) lbDay = tNo;
       const prev = document.createElement("button"), next = document.createElement("button"), lab = document.createElement("span");
       prev.type = next.type = "button"; prev.className = next.className = "tb"; prev.textContent = "‹"; next.textContent = "›";
       prev.disabled = lbDay <= 1; next.disabled = lbDay >= tNo;
+      prev.setAttribute("aria-label", "前一天"); next.setAttribute("aria-label", "後一天");
       prev.onclick = () => { lbDay--; renderRanks(); }; next.onclick = () => { lbDay++; renderRanks(); };
       lab.textContent = `Daily #${lbDay} · ${dailyDate(lbDay)}${lbDay === tNo ? "（今天）" : ""}`;
       head.append(prev, lab, next);
-      const snap = await fdb.collection("daily").doc(String(lbDay)).collection("scores").orderBy("key").limit(50).get();
-      rows = snap.docs.map(d => ({ id: d.id, name: d.data().name, val: d.data().win ? `${d.data().guesses} 次 · ${fmtMs(d.data().ms)}` : "沒猜到" }));
+      const col = fdb.collection("daily").doc(String(lbDay)).collection("scores");
+      const snap = await col.orderBy("key").limit(50).get();
+      const dv = d => (d.win ? `${d.guesses} 次 · ${fmtMs(d.ms)}` : "沒猜到");
+      snap.docs.forEach((d, i) => { const x = d.data(), p = rows[i - 1]; rows.push({ id: d.id, name: x.name, val: dv(x), key: x.key, rank: p && p.key === x.key ? p.rank : i + 1 }); });
       if (me && !rows.some(r => r.id === me.uid)) {
-        const d = await fdb.collection("daily").doc(String(lbDay)).collection("scores").doc(me.uid).get();
-        if (d.exists) { const c = await fdb.collection("daily").doc(String(lbDay)).collection("scores").where("key", "<", d.data().key).get(); mine = { rank: c.size + 1, id: me.uid, name: d.data().name, val: d.data().win ? `${d.data().guesses} 次 · ${fmtMs(d.data().ms)}` : "沒猜到" }; }
+        const d = await col.doc(me.uid).get();
+        if (d.exists) { const x = d.data(), c = await col.where("key", "<", x.key).get(); mine = { rank: c.size + 1, id: me.uid, name: x.name, val: dv(x) }; }
       }
-    } else if (lbTab === "streak") {
-      head.textContent = "Daily 連續猜中的天數（要連到今天或昨天才算）";
-      const snap = await fdb.collection("users").orderBy("dailyStreak", "desc").limit(100).get();
-      rows = snap.docs.filter(d => d.data().dailyStreak > 0 && d.data().streakDay >= tNo - 1).slice(0, 50)
-        .map(d => ({ id: d.id, name: d.data().name, val: `${d.data().dailyStreak} 天` }));
     } else {
-      head.textContent = "Free、Locked、Strict 先比答對題數，一樣再比總共猜了幾次，再一樣比總時間";
-      const snap = await fdb.collection("users").orderBy("solved", "desc").limit(300).get();
-      rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.solved > 0)
-        .sort((a, b) => b.solved - a.solved || (a.tries ?? 1e9) - (b.tries ?? 1e9) || (a.ms ?? 1e15) - (b.ms ?? 1e15))
-        .slice(0, 50)
-        .map(u => ({ id: u.id, name: u.name, val: `${u.solved} 題 · ${u.tries ?? "?"} 次 · ${fmtMs(u.ms || 0)}` }));
+      const all = rankRows(board, await getUsers());
+      rows = all.slice(0, 50);
+      if (me && !rows.some(r => r.id === me.uid)) mine = all.find(r => r.id === me.uid) || null;
     }
   } catch (e) { list.textContent = "讀取失敗，請稍後再試。"; return; }
   list.innerHTML = "";
-  if (!rows.length && !mine) { list.textContent = lbTab === "daily" ? "這一天還沒有人上榜，搶第一！" : "還沒有人上榜。"; return; }
-  const addRow = (r, rank) => {
+  if (!rows.length && !mine) { list.textContent = board.id === "daily" ? "這一天還沒有人上榜，搶第一！" : "還沒有人上榜。"; return; }
+  const addRow = r => {
     const li = document.createElement("div"); li.className = "rrow" + (me && r.id === me.uid ? " me" : "");
-    const a = document.createElement("span"); a.className = "rk"; a.textContent = rank;
+    const a = document.createElement("span"); a.className = "rk"; a.textContent = r.rank;
     const b = document.createElement("span"); b.className = "rn"; b.textContent = r.name || "玩家";
     const c = document.createElement("span"); c.className = "rv"; c.textContent = r.val;
     li.append(a, b, c); list.appendChild(li);
   };
-  rows.forEach((r, i) => addRow(r, i + 1));
-  if (mine) { const gap = document.createElement("div"); gap.className = "rgap"; gap.textContent = "⋯"; list.appendChild(gap); addRow(mine, mine.rank); }
+  rows.forEach(addRow);
+  if (mine) { const gap = document.createElement("div"); gap.className = "rgap"; gap.textContent = "⋯"; list.appendChild(gap); addRow(mine); }
 }
+
 /* the result box under a finished Daily: invite to sign in, or link to the board */
 function paintResultLB() {
   const el = $("resultLB"); if (!el) return;
@@ -1128,10 +1241,9 @@ function paintResultLB() {
     const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.textContent = "用 Google 登入，把成績放上排行榜"; b.onclick = signIn; el.appendChild(b);
   } else {
     const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.textContent = `看 Daily #${pNo} 排行榜`;
-    b.onclick = () => { lbTab = "daily"; lbDay = pNo; lbKeep = true; setPanel("ranks"); }; el.appendChild(b);
+    b.onclick = () => { lbBoard = "daily"; lbDay = pNo; lbKeep = true; setPanel("ranks"); }; el.appendChild(b);
   }
 }
-document.querySelectorAll(".rtab").forEach(b => b.onclick = () => { lbTab = b.dataset.rt; renderRanks(); });
 
 /* ---------- light / dark look ---------- */
 function syncLook() {

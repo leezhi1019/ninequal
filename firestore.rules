@@ -4,16 +4,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // users/{uid}: one row per player for the streak and total-solved boards
+    // users/{uid}: one row per player; every board except "Daily 每天排名" is computed from it
     match /users/{uid} {
       allow read: if true;
       allow create, update: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'solved', 'tries', 'ms', 'dailyStreak', 'dailyBest', 'streakDay', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'tr', 'p1', 'p2', 'wk', 'p2w', 'mo', 'p2m', 'ns', 'nb',
+             'dp', 'dpl', 'dwo', 'dtr', 'lf', 'dailyStreak', 'dailyBest', 'streakDay', 'updatedAt'])
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 40
-        && request.resource.data.solved is int && request.resource.data.solved >= 0 && request.resource.data.solved <= 20000
-        && request.resource.data.tries is int && request.resource.data.tries >= request.resource.data.solved && request.resource.data.tries <= 200000
-        && request.resource.data.ms is int && request.resource.data.ms >= 0
+        && request.resource.data.tr is map && request.resource.data.tr.size() <= 9
+        && request.resource.data.p1 is number && request.resource.data.p1 >= 0 && request.resource.data.p1 <= 200000
+        && request.resource.data.p2 is number && request.resource.data.p2 >= 0 && request.resource.data.p2 <= 400000
+        && request.resource.data.p2w is number && request.resource.data.p2w >= 0 && request.resource.data.p2w <= request.resource.data.p2
+        && request.resource.data.p2m is number && request.resource.data.p2m >= 0 && request.resource.data.p2m <= request.resource.data.p2
+        && request.resource.data.wk is string && request.resource.data.wk.size() == 10
+        && request.resource.data.mo is string && request.resource.data.mo.size() == 7
+        && request.resource.data.ns is int && request.resource.data.ns >= 0
+        && request.resource.data.nb is int && request.resource.data.nb >= request.resource.data.ns && request.resource.data.nb <= 20000
+        && request.resource.data.dp is int && request.resource.data.dp >= 0 && request.resource.data.dp <= 50000
+        && request.resource.data.dpl is int && request.resource.data.dpl >= 0 && request.resource.data.dpl <= 10000
+        && request.resource.data.dwo is int && request.resource.data.dwo >= 0 && request.resource.data.dwo <= request.resource.data.dpl
+        && request.resource.data.dtr is int && request.resource.data.dtr >= 0
+        && request.resource.data.lf is number && request.resource.data.lf >= 0
         && request.resource.data.dailyStreak is int && request.resource.data.dailyStreak >= 0 && request.resource.data.dailyStreak <= 5000
         && request.resource.data.dailyBest is int && request.resource.data.dailyBest >= request.resource.data.dailyStreak
         && request.resource.data.streakDay is int
