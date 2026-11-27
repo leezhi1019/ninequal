@@ -278,6 +278,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       <li>Free、Locked、Strict 裡面再分 <b>Easy、Medium、Hard</b> 三種難度，每種 1000 題。三種規則用的是<b>同一批題目，但順序不一樣</b>，所以 Free · Easy #1 不一定是 Locked · Easy #1，答案不能直接照抄。</li>
       <li>順序對每個人都一樣：所有人的 Locked · Hard #37 都是同一題，可以跟朋友比。每題的進度都會存在這台裝置，玩到一半離開，回來會接著玩。</li>
       <li>朋友出的題目，規則（Free / Locked / Strict）由出題的人決定。</li>
+      <li>九格右上角是計時：按下第一個鍵開始，猜完停止。切到別的 App、鎖手機時會暫停，回到畫面就繼續；中途離開再打開同一題，也會接著算。</li>
       <li>除以 0、<code>0^0</code>、大到算不完的次方都不合法。</li>
     </ul>
     <div class="legend">
@@ -604,6 +605,7 @@ function render(animateRow = -1) {
 
 /* start puzzle n of mode m ("friend" for a friend's code) */
 function startGame(m, n, ans, key) {
+  stopClock();
   answer = ans; pNo = n; pKey = key; custom = m === "friend"; isDaily = m === "daily";
   if (!custom) { const [r, d] = m.split(":"); mode = r; if (d) diff = d; }
   guesses = []; cur = Array(COLS).fill(""); pos = 0; done = false; keyState = {}; fin = { t: 0, w: 0 };
@@ -617,6 +619,8 @@ function startGame(m, n, ans, key) {
   if (p && p.t) fin = { t: p.t, w: p.w ? 1 : 0 };
   startT = (p && p.st) || 0; actMs = (p && p.am) || 0; segT = 0;
   if (done && !fin.t) fin = { t: Date.now(), w: guesses[guesses.length - 1].s === answer ? 1 : 0 };
+  hidPaused = false;
+  if (!done && startT) segT = Date.now(); // reopening a started puzzle: the clock runs as soon as the board is shown
   cur = Array(COLS).fill(""); pos = 0;
   if (!done && p && Array.isArray(p.c) && p.c.length === COLS) {
     cur = p.c.map(c => (typeof c === "string" && ALPHA.includes(c) ? c : ""));
@@ -650,7 +654,7 @@ function press(k) {
     mpos = editRow(mk, mpos, k); $("makeOut").hidden = true; return renderMaker();
   }
   if (view !== "game" || done || panelOpen) return;
-  if (ALPHA.includes(k)) { if (!startT) startT = Date.now(); if (!segT) segT = Date.now(); } // timer starts at the first keystroke, resumes on the next one
+  if (ALPHA.includes(k) && !startT) { startT = Date.now(); segT = startT; } // the clock starts at the first keystroke
   if (k === "Enter") return submit();
   if (k === "Backspace") setStatus(baseStatus());
   pos = editRow(cur, pos, k);
@@ -785,7 +789,7 @@ $("picker").addEventListener("click", e => {
     calMonth = d.toISOString().slice(0, 7); return renderCalendar();
   }
 });
-function showPicker() { clearHash(); custom = false; showFrom("", ""); setPanel(null); setView("picker"); renderPicker(); syncModes(); }
+function showPicker() { stopClock(); clearHash(); custom = false; showFrom("", ""); setPanel(null); setView("picker"); renderPicker(); syncModes(); }
 
 /* ---------- keypad ---------- */
 function buildKeys() {
@@ -1427,14 +1431,19 @@ function paintTimer() {
   let ms = 0, state = "";
   if (done) { const p = store.get(pKey, null); ms = p ? recMs(p) : actMs; state = "done"; }
   else { ms = playMs(); state = !startT ? "idle" : segT ? "run" : "pause"; }
-  el.textContent = fmtClock(ms) + (state === "pause" ? " · 暫停中，按任一鍵繼續" : "");
+  el.textContent = fmtClock(ms);
   el.className = "timer " + state;
 }
 setInterval(() => { if (view === "game" && !panelOpen && !document.hidden) paintTimer(); }, 250);
 
 /* pause the play timer while the page is hidden (switched tab or app, locked phone) */
+/* bank the running time into the current puzzle (leaving it, closing the page) */
+function stopClock() { if (view === "game" && segT && !done) { actMs = playMs(); segT = 0; saveProgress(); } }
+window.addEventListener("pagehide", () => { if (segT) { const keep = segT; stopClock(); segT = keep && !done ? Date.now() : 0; } });
+let hidPaused = false;
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && segT) { actMs = playMs(); segT = 0; saveProgress(); }
+  if (document.hidden) { if (segT) { actMs = playMs(); segT = 0; hidPaused = true; saveProgress(); } }
+  else if (hidPaused) { hidPaused = false; if (view === "game" && !done && startT) segT = Date.now(); paintTimer(); } // back on the page: keep counting right away
 });
 
 /* ---------- light / dark look ---------- */
