@@ -18,6 +18,13 @@
   --f-tile:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
   color-scheme:light;
 }
+/* dark look: warm espresso version of the same palette (toggled by the 深色/淺色 button) */
+:root[data-look="dark"]{
+  --bg:#1D1814; --grid:rgba(240,190,140,.05); --grid-major:rgba(240,190,140,.09); --glow1:rgba(212,127,74,.20); --glow2:rgba(224,169,61,.09); --glow3:rgba(111,165,111,.07); --sym:rgba(240,190,140,.08); --surface:#29221C; --ink:#F2E8DC; --muted:#B39E8A;
+  --line:#463A30; --accent:#E8955E; --accent-ink:#1D1814; --key:#3A3029;
+  --g:#6FA56F; --y:#D6A03A; --r:#C9584C; --on-state:#FFFFFF;
+  color-scheme:dark;
+}
 html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);
   background-image:
@@ -179,6 +186,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </head>
 <body>
 
+<script>try{if(localStorage.getItem("look")==="dark")document.documentElement.setAttribute("data-look","dark")}catch(e){}</script>
 
 <div class="wrap">
   <header>
@@ -189,6 +197,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       <button class="tb" id="btnCode" type="button">輸入代碼</button>
       <button class="tb" id="btnStats" type="button">統計</button>
       <button class="tb" id="btnRanks" type="button" hidden>排行榜</button>
+      <button class="tb" id="btnLook" type="button" aria-pressed="false">深色</button>
       <button class="tb primary" id="btnPick" type="button" hidden>選題</button>
     </div>
   </header>
@@ -1091,6 +1100,21 @@ function paintResultLB() {
   }
 }
 document.querySelectorAll(".rtab").forEach(b => b.onclick = () => { lbTab = b.dataset.rt; renderRanks(); });
+
+/* ---------- light / dark look ---------- */
+function syncLook() {
+  const dark = document.documentElement.getAttribute("data-look") === "dark";
+  $("btnLook").textContent = dark ? "淺色" : "深色";
+  $("btnLook").setAttribute("aria-pressed", dark);
+  $("btnLook").setAttribute("aria-label", dark ? "切換成淺色模式" : "切換成深色模式");
+}
+$("btnLook").onclick = () => {
+  const dark = document.documentElement.getAttribute("data-look") !== "dark";
+  if (dark) document.documentElement.setAttribute("data-look", "dark"); else document.documentElement.removeAttribute("data-look");
+  try { localStorage.setItem("look", dark ? "dark" : "light"); } catch (e) {}
+  syncLook();
+};
+syncLook();
 
 /* ---------- start ---------- */
 buildBoard(); buildKeys();
