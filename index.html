@@ -623,7 +623,7 @@ function buildBoard() {
 function paintKeys() {
   document.querySelectorAll(".key[data-k]").forEach(k => {
     k.classList.remove("g", "y", "r");
-    const st = panelId === "maker" ? null : keyState[k.dataset.k]; if (st) k.classList.add(st);
+    const st = view === "game" && !done && !panelOpen ? keyState[k.dataset.k] : null; if (st) k.classList.add(st); // colors only while a puzzle is in play
   });
 }
 function render(animateRow = -1) {
@@ -861,11 +861,11 @@ function buildKeys() {
     b.setAttribute("aria-label", k === "Backspace" ? "刪除" : k === "Enter" ? "送出" : label);
     b.addEventListener("click", () => press(k)); parent.appendChild(b);
   };
-  // 1 2 3 4 5 送出  /  6 7 8 9 0 ⌫  /  + − × ÷ ^ =
+  // + − × ÷ ^ =  /  1 2 3 4 5 ⌫  /  6 7 8 9 0 送出
   const digit = k => mkKey(grid, k, k), op = k => mkKey(grid, k, show(k), "op");
-  ["1", "2", "3", "4", "5"].forEach(digit); mkKey(grid, "Enter", "送出", "wide enter");
-  ["6", "7", "8", "9", "0"].forEach(digit); mkKey(grid, "Backspace", "⌫", "wide");
   ["+", "-", "*", "/", "^", "="].forEach(op);
+  ["1", "2", "3", "4", "5"].forEach(digit); mkKey(grid, "Backspace", "⌫", "wide");
+  ["6", "7", "8", "9", "0"].forEach(digit); mkKey(grid, "Enter", "送出", "wide enter");
 }
 document.addEventListener("keydown", e => {
   if ((e.target.tagName === "INPUT" && !["checkbox", "radio"].includes(e.target.type)) || e.metaKey || e.ctrlKey || e.altKey) return;
