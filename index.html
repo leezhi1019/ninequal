@@ -26,6 +26,9 @@
   color-scheme:dark;
 }
 html,body{height:100%}
+html{touch-action:manipulation}
+button,.tile,.key,.pk,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.key,.tile,.pk{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);
   background-image:
     radial-gradient(55% 40% at 12% -5%,var(--glow1),transparent 70%),
@@ -78,12 +81,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .status.win{color:var(--g);font-weight:700}
 .status code{font-family:var(--f-tile);font-weight:700;color:var(--ink);background:var(--surface);padding:2px 7px;border-radius:5px;border:1px solid var(--line)}
 .keys{display:flex;flex-direction:column;gap:6px;margin-top:auto}
-.krow{display:grid;gap:5px}
-.krow.d{grid-template-columns:repeat(10,1fr)}
-.krow.o{grid-template-columns:repeat(6,1fr) 1.3fr 1.8fr}
-.key{background:var(--key);color:var(--ink);font-family:var(--f-tile);font-weight:600;font-size:1.1rem;
-  height:52px;min-width:0;padding:0;display:grid;place-items:center}
-.key.wide{font-family:var(--f-body);font-size:.92rem;font-weight:700}
+/* keypad: 3 rows of 6 big keys (digits left, operators right) */
+.kgrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.key{background:var(--key);color:var(--ink);font-family:var(--f-tile);font-weight:700;font-size:clamp(1.25rem,5.6vw,1.5rem);
+  height:clamp(52px,7.2vh,64px);min-width:0;padding:0;display:grid;place-items:center;border-radius:10px}
+.key.wide{font-family:var(--f-body);font-size:clamp(1rem,4.4vw,1.15rem);font-weight:700}
+.key.op{color:var(--accent)}
 .key.enter{background:var(--accent);color:var(--accent-ink)}
 .key.g{background:var(--g);color:var(--on-state)} .key.y{background:var(--y);color:var(--on-state)} .key.r{background:var(--r);color:var(--on-state);opacity:.75}
 .key:active{transform:translateY(1px)}
@@ -198,7 +201,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .codeout{font-family:var(--f-tile);font-size:1.4rem;font-weight:700;letter-spacing:.12em;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:440px){.tools .tb{padding:5px 9px;font-size:.84rem}}
-@media (max-width:400px){.key{height:46px;font-size:1rem}.key.wide{font-size:.8rem}}
+
 </style>
 <style>*,*::before,*::after{box-sizing:border-box}body{margin:0;font-size:14px}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
 </head>
@@ -325,8 +328,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <div class="note" id="shareNote" hidden></div>
   </div>
   <div class="keys" id="keys">
-    <div class="krow d"></div>
-    <div class="krow o"></div>
+    <div class="kgrid"></div>
   </div>
 </div>
 
@@ -780,17 +782,17 @@ function showPicker() { clearHash(); custom = false; showFrom("", ""); setPanel(
 
 /* ---------- keypad ---------- */
 function buildKeys() {
-  const [d, o] = document.querySelectorAll(".krow");
+  const grid = document.querySelector(".kgrid");
   const mkKey = (parent, k, label, cls = "") => {
     const b = document.createElement("button"); b.type = "button"; b.className = "key " + cls; b.textContent = label;
     if (ALPHA.includes(k)) b.dataset.k = k;
     b.setAttribute("aria-label", k === "Backspace" ? "刪除" : k === "Enter" ? "送出" : label);
     b.addEventListener("click", () => press(k)); parent.appendChild(b);
   };
-  "1234567890".split("").forEach(k => mkKey(d, k, k));
-  "+-*/^=".split("").forEach(k => mkKey(o, k, show(k)));
-  mkKey(o, "Backspace", "⌫", "wide");
-  mkKey(o, "Enter", "送出", "wide enter");
+  // 1 2 3 4 5 +  /  6 7 8 9 0 −  /  × ÷ ^ = ⌫ 送出
+  ["1", "2", "3", "4", "5", "+", "6", "7", "8", "9", "0", "-", "*", "/", "^", "="].forEach(k => mkKey(grid, k, show(k), /[0-9]/.test(k) ? "" : "op"));
+  mkKey(grid, "Backspace", "⌫", "wide");
+  mkKey(grid, "Enter", "送出", "wide enter");
 }
 document.addEventListener("keydown", e => {
   if ((e.target.tagName === "INPUT" && !["checkbox", "radio"].includes(e.target.type)) || e.metaKey || e.ctrlKey || e.altKey) return;
