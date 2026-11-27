@@ -863,13 +863,13 @@ function computeStats() {
       const key = localStorage.key(i), m = /^p:(basic|medium|hard|daily|friend):(.+)$/.exec(key || "");
       if (!m) continue;
       const p = store.get(key, null);
-      if (p && p.t) recs[m[1]].push({ n: +m[2] || 0, t: p.t, w: p.w ? 1 : 0, g: (p.g || []).length });
+      if (p && p.t) recs[m[1]].push({ n: +m[2] || 0, t: p.t, w: p.w ? 1 : 0, g: (p.g || []).length, ms: p.st ? Math.max(0, p.t - p.st) : 0 });
     }
   } catch (e) {}
   const out = {};
   STAT_KEYS.forEach(k => {
-    const R = recs[k], s = { played: R.length, won: 0, streak: 0, best: 0, dist: [0, 0, 0, 0, 0, 0] };
-    R.forEach(r => { if (r.w) { s.won++; s.dist[Math.min(6, r.g) - 1]++; } });
+    const R = recs[k], s = { played: R.length, won: 0, streak: 0, best: 0, dist: [0, 0, 0, 0, 0, 0], tries: 0, ms: 0 };
+    R.forEach(r => { s.tries += r.g; s.ms += r.ms; if (r.w) { s.won++; s.dist[Math.min(6, r.g) - 1]++; } });
     if (k === "daily") { // streak = consecutive days won, ending today or yesterday
       const won = new Set(R.filter(r => r.w).map(r => r.n)); let run = 0;
       for (let n = 1; n <= todayNo(); n++) { run = won.has(n) ? run + 1 : 0; s.best = Math.max(s.best, run); }
@@ -1001,6 +1001,8 @@ async function pushUser() {
   try {
     await fdb.collection("users").doc(me.uid).set({
       name: myName.slice(0, 40), solved: st.basic.won + st.medium.won + st.hard.won,
+      tries: st.basic.tries + st.medium.tries + st.hard.tries,
+      ms: Math.min(1e12, Math.round(st.basic.ms + st.medium.ms + st.hard.ms)),
       dailyStreak: st.daily.streak, dailyBest: st.daily.best, streakDay,
       updatedAt: fb.firestore.FieldValue.serverTimestamp(),
     });
@@ -1069,9 +1071,12 @@ async function renderRanks() {
       rows = snap.docs.filter(d => d.data().dailyStreak > 0 && d.data().streakDay >= tNo - 1).slice(0, 50)
         .map(d => ({ id: d.id, name: d.data().name, val: `${d.data().dailyStreak} 天` }));
     } else {
-      head.textContent = "Basic、Medium、Hard 總共猜中的題數";
-      const snap = await fdb.collection("users").orderBy("solved", "desc").limit(50).get();
-      rows = snap.docs.filter(d => d.data().solved > 0).map(d => ({ id: d.id, name: d.data().name, val: `${d.data().solved} 題` }));
+      head.textContent = "Basic、Medium、Hard 先比答對題數，一樣再比總共猜了幾次，再一樣比總時間";
+      const snap = await fdb.collection("users").orderBy("solved", "desc").limit(300).get();
+      rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.solved > 0)
+        .sort((a, b) => b.solved - a.solved || (a.tries ?? 1e9) - (b.tries ?? 1e9) || (a.ms ?? 1e15) - (b.ms ?? 1e15))
+        .slice(0, 50)
+        .map(u => ({ id: u.id, name: u.name, val: `${u.solved} 題 · ${u.tries ?? "?"} 次 · ${fmtMs(u.ms || 0)}` }));
     }
   } catch (e) { list.textContent = "讀取失敗，請稍後再試。"; return; }
   list.innerHTML = "";
