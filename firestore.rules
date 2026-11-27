@@ -1,0 +1,38 @@
+rules_version = '2';
+// Ninequal leaderboard rules: anyone can read the boards; each signed-in player
+// can only write their own row, and a Daily score can be posted once, never edited.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // users/{uid}: one row per player for the streak and total-solved boards
+    match /users/{uid} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'solved', 'dailyStreak', 'dailyBest', 'streakDay', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 40
+        && request.resource.data.solved is int && request.resource.data.solved >= 0 && request.resource.data.solved <= 20000
+        && request.resource.data.dailyStreak is int && request.resource.data.dailyStreak >= 0 && request.resource.data.dailyStreak <= 5000
+        && request.resource.data.dailyBest is int && request.resource.data.dailyBest >= request.resource.data.dailyStreak
+        && request.resource.data.streakDay is int
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // daily/{day}/scores/{uid}: one score per player per Daily puzzle
+    match /daily/{day}/scores/{uid} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'guesses', 'ms', 'win', 'key', 'at'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 40
+        && request.resource.data.guesses is int && request.resource.data.guesses >= 1 && request.resource.data.guesses <= 7
+        && request.resource.data.win is bool
+        && (request.resource.data.win == (request.resource.data.guesses <= 6))
+        && request.resource.data.ms is int && request.resource.data.ms >= 0 && request.resource.data.ms <= 99999999
+        && request.resource.data.key == request.resource.data.guesses * 100000000 + request.resource.data.ms
+        && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+  }
+}

@@ -155,6 +155,22 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .plegend span{display:inline-flex;align-items:center;gap:5px}
 .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
 .sw.half{background:var(--y)} .sw.win{background:var(--g)} .sw.lose{background:var(--r)}
+.acct{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.acct .who{font-weight:700;margin-right:auto}
+.acct input{flex:1 1 140px;min-width:0;font-family:var(--f-body);font-size:.95rem;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.rtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:4px}
+.rtab{background:transparent;color:var(--muted);font-weight:700;font-size:.86rem;padding:7px 4px;border-radius:7px}
+.rtab.on{background:var(--accent);color:var(--accent-ink)}
+.rhead{display:flex;align-items:center;justify-content:center;gap:12px;font-size:.88rem;color:var(--muted);text-align:center;flex-wrap:wrap}
+.rhead .tb{padding:3px 12px}
+.rhead .tb:disabled{opacity:.35;cursor:default}
+.rlist{display:flex;flex-direction:column;min-height:3em;font-variant-numeric:tabular-nums}
+.rrow{display:grid;grid-template-columns:2.4em minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--line)}
+.rrow.me{background:var(--key);border-radius:8px;font-weight:700}
+.rk{font-family:var(--f-tile);font-weight:700;color:var(--accent);text-align:right}
+.rn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv{font-family:var(--f-tile);font-size:.85rem;color:var(--muted)}
+.rgap{text-align:center;color:var(--muted)}
 .codeout{font-family:var(--f-tile);font-size:1.4rem;font-weight:700;letter-spacing:.12em;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:400px){.key{height:46px;font-size:1rem}.key.wide{font-size:.8rem}}
@@ -172,6 +188,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       <button class="tb" id="btnMake" type="button">出題</button>
       <button class="tb" id="btnCode" type="button">輸入代碼</button>
       <button class="tb" id="btnStats" type="button">統計</button>
+      <button class="tb" id="btnRanks" type="button" hidden>排行榜</button>
       <button class="tb primary" id="btnPick" type="button" hidden>選題</button>
     </div>
   </header>
@@ -181,6 +198,19 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <button type="button" class="mode" data-mode="hard">Hard</button>
     <button type="button" class="mode" data-mode="daily">Daily</button>
   </nav>
+  <section class="panel" id="ranks" hidden>
+    <h2>排行榜</h2>
+    <div class="acct" id="acct"></div>
+    <div class="note" id="lbNote" hidden></div>
+    <div class="rtabs" role="tablist" aria-label="排行榜種類">
+      <button type="button" class="rtab" data-rt="daily">Daily 每天排名</button>
+      <button type="button" class="rtab" data-rt="streak">Daily 連勝</button>
+      <button type="button" class="rtab" data-rt="solved">總題數</button>
+    </div>
+    <div class="rhead" id="rhead"></div>
+    <div class="rlist" id="rlist"></div>
+    <p class="note">Daily 排名先比猜中次數，同次數再比花的時間（從你開始輸入算起）。名字預設是你的 Google 名稱，所有人都看得到，可以按「改名」換成暱稱。</p>
+  </section>
   <section class="panel" id="stats" hidden>
     <h2>統計</h2>
     <div class="stattable" id="statTable"></div>
@@ -262,6 +292,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       <button class="tb primary" id="btnShare" type="button">複製成績</button>
       <button class="tb" id="btnStats2" type="button">看統計</button>
     </div>
+    <div class="inrow" id="resultLB" hidden></div>
     <pre class="sharetext" id="shareText" hidden></pre>
     <div class="note" id="shareNote" hidden></div>
   </div>
@@ -440,7 +471,7 @@ const store = {
 let mode = store.get("mode2", "medium"); if (!MODE_NAME[mode]) mode = "medium";
 let view = "picker";
 let answer = "", guesses = [], cur = Array(COLS).fill(""), pos = 0, done = false, custom = false, keyState = {};
-let pNo = 0, pKey = "", isDaily = false, fin = { t: 0, w: 0 }, replaying = false;
+let pNo = 0, pKey = "", isDaily = false, fin = { t: 0, w: 0 }, replaying = false, startT = 0;
 let panelOpen = false, panelId = null, mk = Array(COLS).fill(""), mpos = 0;
 
 /* progress per puzzle: { g: [submitted rows], c: [unsent row], t: finish time (0 = unfinished), w: 1 win / 0 lose } */
@@ -452,7 +483,7 @@ function puzzleState(m, n) {
 }
 function saveProgress() {
   if (!pKey || replaying) return;
-  store.set(pKey, { g: guesses.map(x => x.s), c: cur, t: fin.t, w: fin.w });
+  store.set(pKey, { g: guesses.map(x => x.s), c: cur, t: fin.t, w: fin.w, st: startT });
 }
 
 /* rule level: basic = anything goes; medium = keep greens, use yellows; hard = medium + must be a valid equation */
@@ -525,6 +556,7 @@ function startGame(m, n, ans, key) {
   if (p && Array.isArray(p.g)) for (const g of p.g) { if (done) break; if (typeof g === "string" && g.length === COLS) { cur = [...g]; submit(true); } }
   replaying = false;
   if (p && p.t) fin = { t: p.t, w: p.w ? 1 : 0 };
+  startT = (p && p.st) || 0;
   if (done && !fin.t) fin = { t: Date.now(), w: guesses[guesses.length - 1].s === answer ? 1 : 0 };
   cur = Array(COLS).fill(""); pos = 0;
   if (!done && p && Array.isArray(p.c) && p.c.length === COLS) {
@@ -559,6 +591,7 @@ function press(k) {
     mpos = editRow(mk, mpos, k); $("makeOut").hidden = true; return renderMaker();
   }
   if (view !== "game" || done || panelOpen) return;
+  if (!startT && ALPHA.includes(k)) startT = Date.now(); // timer for the Daily board starts at the first keystroke
   if (k === "Enter") return submit();
   if (k === "Backspace") setStatus(baseStatus());
   pos = editRow(cur, pos, k);
@@ -604,6 +637,7 @@ function submit(replay = false) {
   if (replay) return;
   if (done) { fin = { t: Date.now(), w: win ? 1 : 0 }; showResult(true); }
   render(row);
+  if (done) onFinishLB();
 }
 
 /* ---------- views: puzzle picker vs. game ---------- */
@@ -713,7 +747,7 @@ document.addEventListener("keydown", e => {
 });
 
 /* ---------- panels ---------- */
-const PANELS = { btnRules: "rules", btnMake: "maker", btnCode: "challenge", btnStats: "stats" };
+const PANELS = { btnRules: "rules", btnMake: "maker", btnCode: "challenge", btnStats: "stats", btnRanks: "ranks" };
 function renderMaker() {
   [...$("makeRow").children].forEach((t, c) => {
     t.textContent = mk[c] ? show(mk[c]) : "";
@@ -726,6 +760,7 @@ function setPanel(id) { // id = panel to show, or null to go back
   applyLayout();
   if (id === "maker") renderMaker();
   if (id === "stats") renderStats();
+  if (id === "ranks") { if (!lbKeep) lbDay = isDaily && view === "game" ? pNo : 0; lbKeep = false; renderAcct(); renderRanks(); }
   if (id === "challenge") $("codeIn").focus();
   if (!id && view === "picker") renderPicker();
 }
@@ -883,7 +918,179 @@ function showResult(on) {
   $("countdown").hidden = !cd;
   if (cd) { tickCountdown(); cdTimer = setInterval(tickCountdown, 1000); }
   applyLayout();
+  paintResultLB();
 }
+
+/* ---------- leaderboard (Firebase: Google sign-in + Firestore). Only on the real website; the Claude preview can't load Firebase. ---------- */
+const LB_ON = (() => { try { return /github\.io$/i.test(location.hostname) || /^#lbtest$/.test(location.hash); } catch (e) { return false; } })();
+const FB_CONFIG = {
+  apiKey: "AIzaSyBncXP3_VIG-L-OlGlrZCkc21ZE9ZouUYA",
+  authDomain: "ninequal.firebaseapp.com",
+  projectId: "ninequal",
+  storageBucket: "ninequal.firebasestorage.app",
+  messagingSenderId: "1086512489274",
+  appId: "1:1086512489274:web:5608fe9fc378a998de2603",
+};
+const FB_V = "10.12.2";
+let lbFail = false, lbKeep = false, fb = null, fdb = null, me = null, myName = "", lbTab = "daily", lbDay = 0, synced = false;
+const loadScript = src => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+async function initLB() {
+  if (!LB_ON) return;
+  $("btnRanks").hidden = false;
+  try {
+    for (const m of ["app", "auth", "firestore"]) await loadScript(`https://www.gstatic.com/firebasejs/${FB_V}/firebase-${m}-compat.js`);
+    fb = window.firebase; fb.initializeApp(FB_CONFIG); fdb = fb.firestore();
+    fb.auth().getRedirectResult().catch(() => {});
+    fb.auth().onAuthStateChanged(async u => {
+      me = u; synced = false;
+      if (u) {
+        try { const d = await fdb.collection("users").doc(u.uid).get(); myName = (d.exists && d.data().name) || u.displayName || "玩家"; } catch (e) { myName = u.displayName || "玩家"; }
+        await syncAll();
+      }
+      renderAcct(); if (panelId === "ranks") renderRanks();
+      paintResultLB();
+    });
+  } catch (e) {
+    lbFail = true; renderAcct(); if (panelId === "ranks") renderRanks();
+  }
+}
+function signIn() {
+  const p = new fb.auth.GoogleAuthProvider();
+  fb.auth().signInWithPopup(p).catch(e => {
+    if (e && /popup|operation-not-supported/i.test(e.code || "")) fb.auth().signInWithRedirect(p);
+    else lbNote("登入失敗：" + ((e && e.message) || "請再試一次"));
+  });
+}
+function lbNote(t) { $("lbNote").textContent = t; $("lbNote").hidden = !t; }
+/* push this device's results: every finished Daily (create-only) + my totals */
+async function syncAll() {
+  if (!me || synced) return; synced = true;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const m = /^p:daily:(\d+)$/.exec(localStorage.key(i) || ""); if (!m) continue;
+      const p = store.get(m[0], null); if (p && p.t) await submitDaily(+m[1], p);
+    }
+  } catch (e) {}
+  await pushUser();
+}
+async function submitDaily(n, p) {
+  if (!me || !fdb || !p || !p.t) return;
+  const ref = fdb.collection("daily").doc(String(n)).collection("scores").doc(me.uid);
+  try {
+    if ((await ref.get()).exists) return;
+    const g = p.w ? Math.min(6, (p.g || []).length) : 7;
+    const ms = Math.max(0, Math.min(99999999, Math.round(p.t - (p.st || p.t))));
+    await ref.set({ name: myName.slice(0, 40), guesses: g, ms, win: !!p.w, key: g * 1e8 + ms, at: fb.firestore.FieldValue.serverTimestamp() });
+  } catch (e) {}
+}
+async function pushUser() {
+  if (!me || !fdb) return;
+  const st = computeStats(), t = todayNo();
+  const won = new Set(); // Daily wins by day number, for the streak's last day
+  try { for (let i = 0; i < localStorage.length; i++) { const m = /^p:daily:(\d+)$/.exec(localStorage.key(i) || ""); if (m) { const p = store.get(m[0], null); if (p && p.t && p.w) won.add(+m[1]); } } } catch (e) {}
+  const streakDay = won.has(t) ? t : won.has(t - 1) ? t - 1 : 0;
+  try {
+    await fdb.collection("users").doc(me.uid).set({
+      name: myName.slice(0, 40), solved: st.basic.won + st.medium.won + st.hard.won,
+      dailyStreak: st.daily.streak, dailyBest: st.daily.best, streakDay,
+      updatedAt: fb.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {}
+}
+/* called when a puzzle finishes (not on replay) */
+async function onFinishLB() {
+  if (!me) return;
+  if (isDaily) await submitDaily(pNo, store.get(pKey, null));
+  if (!custom) await pushUser();
+  paintResultLB();
+}
+function renderAcct() {
+  const el = $("acct"); el.innerHTML = "";
+  if (!fb) { el.textContent = lbFail ? "排行榜暫時連不上，請檢查網路後重新整理。" : "排行榜載入中…"; return; }
+  if (!me) {
+    const p = document.createElement("p"); p.className = "note"; p.textContent = "不用登入也能看排行榜。想上榜的話，用 Google 登入，你在這台裝置玩過的 Daily 成績會一起上傳。";
+    const b = document.createElement("button"); b.type = "button"; b.className = "tb primary"; b.textContent = "用 Google 登入"; b.onclick = signIn;
+    el.append(p, b); return;
+  }
+  const who = document.createElement("span"); who.className = "who"; who.textContent = `已登入：${myName}`;
+  const ren = document.createElement("button"); ren.type = "button"; ren.className = "tb"; ren.textContent = "改名";
+  const out = document.createElement("button"); out.type = "button"; out.className = "tb"; out.textContent = "登出";
+  out.onclick = () => fb.auth().signOut();
+  ren.onclick = () => {
+    el.innerHTML = "";
+    const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 20; inp.value = myName; inp.id = "nameIn"; inp.setAttribute("aria-label", "排行榜上的名字");
+    const ok = document.createElement("button"); ok.type = "button"; ok.className = "tb primary"; ok.textContent = "儲存";
+    const no = document.createElement("button"); no.type = "button"; no.className = "tb"; no.textContent = "取消"; no.onclick = renderAcct;
+    ok.onclick = async () => {
+      const v = inp.value.trim(); if (!v) { inp.focus(); return; }
+      myName = v.slice(0, 20); await pushUser(); renderAcct(); renderRanks();
+    };
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") ok.click(); });
+    el.append(inp, ok, no); inp.focus();
+  };
+  el.append(who, ren, out);
+}
+const fmtMs = ms => { const s = Math.round(ms / 1000); return s < 60 ? `${s} 秒` : s < 3600 ? `${Math.floor(s / 60)} 分 ${s % 60} 秒` : `${Math.floor(s / 3600)} 小時以上`; };
+async function renderRanks() {
+  if (!LB_ON) return;
+  document.querySelectorAll(".rtab").forEach(b => b.classList.toggle("on", b.dataset.rt === lbTab));
+  const head = $("rhead"), list = $("rlist");
+  head.innerHTML = ""; list.textContent = fdb ? "載入中…" : lbFail ? "" : "排行榜載入中…";
+  if (!fdb) return;
+  const tNo = todayNo();
+  if (!lbDay) lbDay = tNo;
+  let rows = [], mine = null;
+  try {
+    if (lbTab === "daily") {
+      const prev = document.createElement("button"), next = document.createElement("button"), lab = document.createElement("span");
+      prev.type = next.type = "button"; prev.className = next.className = "tb"; prev.textContent = "‹"; next.textContent = "›";
+      prev.disabled = lbDay <= 1; next.disabled = lbDay >= tNo;
+      prev.onclick = () => { lbDay--; renderRanks(); }; next.onclick = () => { lbDay++; renderRanks(); };
+      lab.textContent = `Daily #${lbDay} · ${dailyDate(lbDay)}${lbDay === tNo ? "（今天）" : ""}`;
+      head.append(prev, lab, next);
+      const snap = await fdb.collection("daily").doc(String(lbDay)).collection("scores").orderBy("key").limit(50).get();
+      rows = snap.docs.map(d => ({ id: d.id, name: d.data().name, val: d.data().win ? `${d.data().guesses} 次 · ${fmtMs(d.data().ms)}` : "沒猜到" }));
+      if (me && !rows.some(r => r.id === me.uid)) {
+        const d = await fdb.collection("daily").doc(String(lbDay)).collection("scores").doc(me.uid).get();
+        if (d.exists) { const c = await fdb.collection("daily").doc(String(lbDay)).collection("scores").where("key", "<", d.data().key).get(); mine = { rank: c.size + 1, id: me.uid, name: d.data().name, val: d.data().win ? `${d.data().guesses} 次 · ${fmtMs(d.data().ms)}` : "沒猜到" }; }
+      }
+    } else if (lbTab === "streak") {
+      head.textContent = "Daily 連續猜中的天數（要連到今天或昨天才算）";
+      const snap = await fdb.collection("users").orderBy("dailyStreak", "desc").limit(100).get();
+      rows = snap.docs.filter(d => d.data().dailyStreak > 0 && d.data().streakDay >= tNo - 1).slice(0, 50)
+        .map(d => ({ id: d.id, name: d.data().name, val: `${d.data().dailyStreak} 天` }));
+    } else {
+      head.textContent = "Basic、Medium、Hard 總共猜中的題數";
+      const snap = await fdb.collection("users").orderBy("solved", "desc").limit(50).get();
+      rows = snap.docs.filter(d => d.data().solved > 0).map(d => ({ id: d.id, name: d.data().name, val: `${d.data().solved} 題` }));
+    }
+  } catch (e) { list.textContent = "讀取失敗，請稍後再試。"; return; }
+  list.innerHTML = "";
+  if (!rows.length && !mine) { list.textContent = lbTab === "daily" ? "這一天還沒有人上榜，搶第一！" : "還沒有人上榜。"; return; }
+  const addRow = (r, rank) => {
+    const li = document.createElement("div"); li.className = "rrow" + (me && r.id === me.uid ? " me" : "");
+    const a = document.createElement("span"); a.className = "rk"; a.textContent = rank;
+    const b = document.createElement("span"); b.className = "rn"; b.textContent = r.name || "玩家";
+    const c = document.createElement("span"); c.className = "rv"; c.textContent = r.val;
+    li.append(a, b, c); list.appendChild(li);
+  };
+  rows.forEach((r, i) => addRow(r, i + 1));
+  if (mine) { const gap = document.createElement("div"); gap.className = "rgap"; gap.textContent = "⋯"; list.appendChild(gap); addRow(mine, mine.rank); }
+}
+/* the result box under a finished Daily: invite to sign in, or link to the board */
+function paintResultLB() {
+  const el = $("resultLB"); if (!el) return;
+  el.innerHTML = "";
+  el.hidden = !(LB_ON && fb && done && isDaily);
+  if (el.hidden) return;
+  if (!me) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.textContent = "用 Google 登入，把成績放上排行榜"; b.onclick = signIn; el.appendChild(b);
+  } else {
+    const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.textContent = `看 Daily #${pNo} 排行榜`;
+    b.onclick = () => { lbTab = "daily"; lbDay = pNo; lbKeep = true; setPanel("ranks"); }; el.appendChild(b);
+  }
+}
+document.querySelectorAll(".rtab").forEach(b => b.onclick = () => { lbTab = b.dataset.rt; renderRanks(); });
 
 /* ---------- start ---------- */
 buildBoard(); buildKeys();
@@ -896,6 +1103,7 @@ function fromHash() {
 }
 window.addEventListener("hashchange", fromHash);
 if (!fromHash()) showPicker();
+initLB();
 
 </script>
 
