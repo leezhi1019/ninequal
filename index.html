@@ -170,8 +170,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .rtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:4px}
 .rtab{background:transparent;color:var(--muted);font-weight:700;font-size:.86rem;padding:7px 4px;border-radius:7px}
 .rtab.on{background:var(--accent);color:var(--accent-ink)}
-.rsel{display:flex;flex-direction:column;gap:4px;font-size:.84rem;font-weight:700;color:var(--muted)}
-.rsel select{font-family:var(--f-body);font-size:.98rem;font-weight:500;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);max-width:100%}
+.rcats{grid-template-columns:repeat(4,1fr)}
+.rchips{display:flex;flex-direction:column;gap:8px}
+.crow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.clab{font-size:.78rem;font-weight:700;color:var(--muted);min-width:3.2em}
+.cgrid{display:grid;grid-template-columns:auto repeat(3,minmax(0,1fr));gap:6px;align-items:center}
+.cgrid .clab{text-align:left}
+.rchip{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:.86rem;font-weight:600}
+.cgrid .rchip{border-radius:8px;padding:6px 4px;font-size:.84rem;min-width:0}
+.rchip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 #rdesc{margin:0}
 .rhead{display:flex;align-items:center;justify-content:center;gap:12px;font-size:.88rem;color:var(--muted);text-align:center;flex-wrap:wrap}
 .rhead .tb{padding:3px 12px}
@@ -185,6 +192,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .rgap{text-align:center;color:var(--muted)}
 .codeout{font-family:var(--f-tile);font-size:1.4rem;font-weight:700;letter-spacing:.12em;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:440px){.tools .tb{padding:5px 9px;font-size:.84rem}}
 @media (max-width:400px){.key{height:46px;font-size:1rem}.key.wide{font-size:.8rem}}
 </style>
 <style>*,*::before,*::after{box-sizing:border-box}body{margin:0;font-size:14px}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
@@ -216,7 +224,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <h2>排行榜</h2>
     <div class="acct" id="acct"></div>
     <div class="note" id="lbNote" hidden></div>
-    <label class="rsel" for="rsel"><span>看哪一種排名</span><select id="rsel"></select></label>
+    <div class="rtabs rcats" id="rcats" role="tablist" aria-label="排行榜分類"></div>
+    <div class="rchips" id="rchips"></div>
     <p class="note" id="rdesc"></p>
     <div class="rhead" id="rhead"></div>
     <div class="rlist" id="rlist"></div>
@@ -1175,20 +1184,45 @@ function rankRows(board, users) {
   rows.forEach((r, i) => (r.rank = i && cmp(r, rows[i - 1]) === 0 ? rows[i - 1].rank : i + 1));
   return rows;
 }
+/* category tabs, then every board in that category as a button */
+const CATS = [
+  { id: "daily", name: "Daily", ids: ["daily", "dstreak", "dpts", "davg"] },
+  { id: "pts", name: "積分", ids: ["pts", "pts2", "week", "month"] },
+  { id: "count", name: "題數", ids: null },
+  { id: "perf", name: "表現", ids: ["avg", "rate", "speed", "nstreak"] },
+];
+const SHORT = { daily: "每天排名", dstreak: "連勝", dpts: "總分", davg: "平均次數", pts: "積分", pts2: "積分＋猜得少加分", week: "本週積分", month: "本月積分",
+  solved: "總答對", hardonly: "只算 Hard", avg: "平均猜幾次", rate: "勝率", speed: "平均速度", nstreak: "連勝" };
+const catOf = id => (CATS.find(c => c.ids && c.ids.includes(id)) || CATS[2]).id;
+function chip(id, label) { return `<button type="button" class="rchip${id === lbBoard ? " on" : ""}" data-board="${id}" aria-pressed="${id === lbBoard}">${label}</button>`; }
 function buildBoardSelect() {
-  const sel = $("rsel"); sel.innerHTML = "";
-  ["Daily", "題目"].forEach(g => {
-    const og = document.createElement("optgroup"); og.label = g === "Daily" ? "Daily" : "題目（Free / Locked / Strict）";
-    BOARDS.filter(b => b.group === g).forEach(b => { const o = document.createElement("option"); o.value = b.id; o.textContent = b.name; og.appendChild(o); });
-    sel.appendChild(og);
-  });
-  sel.value = lbBoard;
-  sel.onchange = () => { lbBoard = sel.value; store.set("lbBoard", lbBoard); renderRanks(); };
+  const cat = catOf(lbBoard);
+  $("rcats").innerHTML = CATS.map(c => `<button type="button" class="rtab${c.id === cat ? " on" : ""}" data-cat="${c.id}">${c.name}</button>`).join("");
+  let h = "";
+  if (cat === "count") {
+    h += `<div class="crow">${chip("solved", "總答對")}${chip("hardonly", "只算 Hard")}</div>`;
+    h += `<div class="crow"><span class="clab">依難度</span>${DIFFS.map(d => chip(`d_${d}`, DIFF_NAME[d])).join("")}</div>`;
+    h += `<div class="crow"><span class="clab">依規則</span>${RULES.map(r => chip(`r_${r}`, MODE_NAME[r])).join("")}</div>`;
+    h += `<div class="clab">規則 × 難度</div><div class="cgrid">`
+      + RULES.map(r => `<span class="clab">${MODE_NAME[r]}</span>` + DIFFS.map(d => chip(`t_${r}_${d}`, DIFF_NAME[d])).join("")).join("") + "</div>";
+  } else {
+    h += `<div class="crow">${CATS.find(c => c.id === cat).ids.map(id => chip(id, SHORT[id])).join("")}</div>`;
+  }
+  $("rchips").innerHTML = h;
 }
+$("rcats").addEventListener("click", e => {
+  const b = e.target.closest("[data-cat]"); if (!b) return;
+  const c = CATS.find(x => x.id === b.dataset.cat);
+  lbBoard = c.ids ? c.ids[0] : "solved"; store.set("lbBoard", lbBoard); buildBoardSelect(); renderRanks();
+});
+$("rchips").addEventListener("click", e => {
+  const b = e.target.closest("[data-board]"); if (!b) return;
+  lbBoard = b.dataset.board; store.set("lbBoard", lbBoard); buildBoardSelect(); renderRanks();
+});
 async function renderRanks() {
   if (!LB_ON) return;
   const board = BOARDS.find(b => b.id === lbBoard) || BOARDS[0];
-  $("rsel").value = board.id; $("rdesc").textContent = board.desc;
+  buildBoardSelect(); $("rdesc").textContent = `${board.name}：${board.desc}`;
   const head = $("rhead"), list = $("rlist");
   head.innerHTML = ""; list.textContent = fdb ? "載入中…" : lbFail ? "" : "排行榜載入中…";
   if (!fdb) return;
