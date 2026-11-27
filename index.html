@@ -186,6 +186,16 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .urlbox{font-family:var(--f-tile);font-size:.78rem;color:var(--muted);overflow-wrap:anywhere;user-select:all}
 .note.small{font-size:.8rem;margin:0}
 .blobby{display:flex;flex-direction:column;gap:10px}
+.bsum{font-weight:700;color:var(--accent)}
+.blist{display:flex;flex-direction:column;gap:6px}
+.bitem{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:8px;padding:8px 10px;font-family:var(--f-body)}
+.bitem.win{border-left-color:var(--g)} .bitem.lose{border-left-color:var(--r)} .bitem.live{border-left-color:var(--accent)}
+.bi-l,.bi-r{display:flex;flex-direction:column;gap:1px;min-width:0}
+.bi-l b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bi-r{align-items:flex-end;flex-shrink:0}
+.bi-r b{font-family:var(--f-tile);font-size:1.05rem;font-variant-numeric:tabular-nums}
+.bitem small{color:var(--muted);font-size:.76rem}
+.bitem.win .bi-r small{color:var(--g)} .bitem.lose .bi-r small{color:var(--r)} .bitem.live .bi-r small{color:var(--accent)}
 #challenge h3,.bcard h3{font-family:var(--f-display);font-size:1rem;margin:4px 0 0}
 .battle{display:flex;flex-direction:column;gap:12px}
 .bhead{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
@@ -302,6 +312,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
         <button class="tb primary" id="bJoin" type="button">加入</button>
       </div>
       <div class="note" id="bNote" hidden></div>
+      <h3>對戰紀錄</h3>
+      <div class="bsum" id="bSum"></div>
+      <div class="blist" id="bHistory"><p class="note">載入中…</p></div>
     </div>
     <h3><label for="codeIn">朋友出的題目代碼</label></h3>
     <div class="inrow">
@@ -1710,7 +1723,62 @@ function renderLobby() {
   const last = store.get("battle", "");
   $("bResume").innerHTML = last ? `<button type="button" class="tb primary" id="bResumeBtn">回到對戰（房間 ${esc(last)}）</button>` : "";
   if (last) $("bResumeBtn").onclick = () => joinBattle(last);
+  loadHistory();
 }
+/* past battles: every room I'm in, newest first, with the score worked out from its rounds */
+const histCache = { t: 0, uid: "", rows: [] };
+function tallyRooms(res, mine, opp, bestOf) {
+  const need = bestOf / 2 + 0.5; let a = 0, b = 0, r = 1, played = 0;
+  while (res[`${r}_${mine}`] && opp && res[`${r}_${opp}`]) {
+    const w = roundWinner(res[`${r}_${mine}`], res[`${r}_${opp}`]);
+    if (w === "a") a++; else if (w === "b") b++;
+    played++; if (a >= need || b >= need) break; r++;
+  }
+  return { a, b, played, over: a >= need || b >= need };
+}
+async function loadHistory(force) {
+  const box = $("bHistory"), sum = $("bSum"); if (!me || !fdb) return;
+  if (!force && histCache.uid === me.uid && Date.now() - histCache.t < 30000) return paintHistory();
+  box.innerHTML = `<p class="note">載入中…</p>`; sum.textContent = "";
+  try {
+    const [h, g] = await Promise.all([
+      fdb.collection("rooms").where("host", "==", me.uid).limit(30).get(),
+      fdb.collection("rooms").where("guest", "==", me.uid).limit(30).get(),
+    ]);
+    const rooms = new Map();
+    [...h.docs, ...g.docs].forEach(d => { const x = d.data(); if (x.host === me.uid || x.guest === me.uid) rooms.set(d.id, x); });
+    const rows = await Promise.all([...rooms].map(async ([code, x]) => {
+      const opp = x.host === me.uid ? x.guest : x.host, oppName = x.host === me.uid ? x.guestName : x.hostName;
+      const at = x.at && x.at.toMillis ? x.at.toMillis() : 0;
+      let t = { a: 0, b: 0, played: 0, over: false };
+      if (opp) {
+        const rs = await fdb.collection("rooms").doc(code).collection("res").get(), res = {};
+        rs.forEach(d => (res[d.id] = d.data()));
+        t = tallyRooms(res, me.uid, opp, x.bestOf || 3);
+      }
+      return { code, opp, oppName, bestOf: x.bestOf, rule: x.rule, at, ...t };
+    }));
+    rows.sort((p, q) => q.at - p.at);
+    histCache.t = Date.now(); histCache.uid = me.uid; histCache.rows = rows;
+    paintHistory();
+  } catch (e) { box.innerHTML = `<p class="note err">讀不到對戰紀錄${e && e.code === "permission-denied" ? "（資料庫規則可能還沒更新）" : ""}。</p>`; }
+}
+function paintHistory() {
+  const box = $("bHistory"), sum = $("bSum"), rows = histCache.rows;
+  const done = rows.filter(r => r.over), w = done.filter(r => r.a > r.b).length;
+  sum.textContent = done.length ? `總戰績 ${w} 勝 ${done.length - w} 敗` : "";
+  if (!rows.length) { box.innerHTML = `<p class="note">還沒有對戰紀錄，建立一場吧！</p>`; return; }
+  const day = ms => { if (!ms) return ""; const d = new Date(ms + 8 * 3600e3); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; };
+  box.innerHTML = rows.map(r => {
+    const state = !r.opp ? "wait" : r.over ? (r.a > r.b ? "win" : "lose") : "live";
+    const tag = { wait: "等人加入", win: "你贏", lose: "對手贏", live: "進行中" }[state];
+    return `<button type="button" class="bitem ${state}" data-hroom="${esc(r.code)}">
+      <span class="bi-l"><b>${r.opp ? "vs " + esc(r.oppName || "玩家") : "房間 " + esc(r.code)}</b><small>${esc([day(r.at), BEST_NAME[r.bestOf], MODE_NAME[r.rule]].filter(Boolean).join(" · "))}</small></span>
+      <span class="bi-r"><b>${r.opp ? `${r.a} : ${r.b}` : "—"}</b><small>${tag}</small></span>
+    </button>`;
+  }).join("");
+}
+$("bHistory").addEventListener("click", e => { const b = e.target.closest("[data-hroom]"); if (b) joinBattle(b.dataset.hroom); });
 $("bCreate").onclick = createBattle;
 $("bJoin").onclick = () => joinBattle($("bCodeIn").value);
 $("bCodeIn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("bJoin").click(); } });
