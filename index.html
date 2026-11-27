@@ -184,6 +184,31 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .inapp a.tb{text-decoration:none;display:inline-block;border-radius:8px;font-weight:700}
 .urlbox{font-family:var(--f-tile);font-size:.78rem;color:var(--muted);overflow-wrap:anywhere;user-select:all}
 .note.small{font-size:.8rem;margin:0}
+.blobby{display:flex;flex-direction:column;gap:10px}
+#challenge h3,.bcard h3{font-family:var(--f-display);font-size:1rem;margin:4px 0 0}
+.battle{display:flex;flex-direction:column;gap:12px}
+.bhead{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.bp{display:flex;align-items:center;gap:10px;min-width:0}
+.bp:not(.me){justify-content:flex-end}
+.bn{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.bs{font-family:var(--f-tile);font-weight:700;font-size:2rem;color:var(--accent);font-variant-numeric:tabular-nums}
+.bmid{display:flex;flex-direction:column;align-items:center;font-size:.78rem;color:var(--muted);text-align:center}
+.bmid b{color:var(--ink);font-size:.9rem}
+.bcode{font-family:var(--f-tile)}
+.bcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;font-size:.92rem;line-height:1.6}
+.bcard p{margin:0}
+.bcard code{font-family:var(--f-tile);font-weight:700}
+.bwait{color:var(--muted);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.tb.big{font-size:1.05rem;padding:10px 18px;align-self:flex-start}
+.bover.win h3{color:var(--g)} .bover.lose h3{color:var(--r)}
+.bhist{display:flex;flex-direction:column;gap:8px}
+.bround{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.bround.win{border-left-color:var(--g)} .bround.lose{border-left-color:var(--r)}
+.brt{font-weight:700;font-size:.86rem}
+.brl{display:grid;grid-template-columns:3em auto 1fr;gap:8px;align-items:baseline;font-size:.86rem;font-variant-numeric:tabular-nums}
+.brl span{color:var(--muted)} .brl code{text-align:right;color:var(--muted);font-size:.8rem;overflow-wrap:anywhere}
+.bfoot{justify-content:center}
 .rcats{grid-template-columns:repeat(4,1fr)}
 .rchips{display:flex;flex-direction:column;gap:8px}
 .crow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
@@ -221,7 +246,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <div class="tools">
       <button class="tb" id="btnRules" type="button">規則</button>
       <button class="tb" id="btnMake" type="button">出題</button>
-      <button class="tb" id="btnCode" type="button">輸入代碼</button>
+      <button class="tb" id="btnCode" type="button">對戰</button>
       <button class="tb" id="btnStats" type="button">統計</button>
       <button class="tb" id="btnRanks" type="button" hidden>排行榜</button>
       <button class="tb" id="btnLook" type="button" aria-pressed="false">深色</button>
@@ -253,7 +278,31 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <p class="note">紀錄存在這台裝置的瀏覽器裡。</p>
   </section>
   <section class="panel" id="challenge" hidden>
-    <h2><label for="codeIn">輸入朋友的代碼</label></h2>
+    <h2>對戰</h2>
+    <p class="note">和朋友連線，每回合互相出一題給對方猜。次數少的贏，次數一樣比時間；兩人都沒猜到或完全一樣，這回合不算。先拿到需要勝場的人贏。</p>
+    <div id="bAcct"></div>
+    <div id="bLobby" class="blobby">
+      <div id="bResume"></div>
+      <h3>建立對戰</h3>
+      <div class="rulepick" role="radiogroup" aria-label="場數">
+        <label><input type="radio" name="bBest" value="3" checked> 三戰兩勝</label>
+        <label><input type="radio" name="bBest" value="5"> 五戰三勝</label>
+        <label><input type="radio" name="bBest" value="7"> 七戰四勝</label>
+      </div>
+      <div class="rulepick" role="radiogroup" aria-label="規則">
+        <label><input type="radio" name="bRule" value="free" checked> Free</label>
+        <label><input type="radio" name="bRule" value="locked"> Locked</label>
+        <label><input type="radio" name="bRule" value="strict"> Strict</label>
+      </div>
+      <button class="tb primary" id="bCreate" type="button">建立對戰</button>
+      <h3><label for="bCodeIn">加入朋友的對戰</label></h3>
+      <div class="inrow">
+        <input id="bCodeIn" type="text" autocomplete="off" spellcheck="false" maxlength="6" placeholder="6 個字元的房間代碼">
+        <button class="tb primary" id="bJoin" type="button">加入</button>
+      </div>
+      <div class="note" id="bNote" hidden></div>
+    </div>
+    <h3><label for="codeIn">朋友出的題目代碼</label></h3>
     <div class="inrow">
       <input id="codeIn" type="text" autocomplete="off" spellcheck="false" maxlength="10" placeholder="輸入 10 個字元的代碼">
       <button class="tb primary" id="codeBtn" type="button">挑戰</button>
@@ -278,6 +327,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       <li>Free、Locked、Strict 裡面再分 <b>Easy、Medium、Hard</b> 三種難度，每種 1000 題。三種規則用的是<b>同一批題目，但順序不一樣</b>，所以 Free · Easy #1 不一定是 Locked · Easy #1，答案不能直接照抄。</li>
       <li>順序對每個人都一樣：所有人的 Locked · Hard #37 都是同一題，可以跟朋友比。每題的進度都會存在這台裝置，玩到一半離開，回來會接著玩。</li>
       <li>朋友出的題目，規則（Free / Locked / Strict）由出題的人決定。</li>
+      <li><b>對戰</b>：按「對戰」建立房間（三戰兩勝、五戰三勝或七戰四勝，並選規則），把 6 碼代碼或連結給朋友加入。每回合兩人各出一題給對方，再各自猜對方的題目：次數少的贏，次數一樣比時間；兩人都沒猜到或完全一樣，這回合不算、繼續加賽。雙方都要用 Google 登入。</li>
       <li>九格右上角是計時：按下第一個鍵開始，猜完停止。切到別的 App、鎖手機時會暫停，回到畫面就繼續；中途離開再打開同一題，也會接著算。</li>
       <li>除以 0、<code>0^0</code>、大到算不完的次方都不合法。</li>
     </ul>
@@ -319,6 +369,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   </section>
 
   <section class="picker" id="picker" hidden></section>
+  <section class="battle" id="battle" hidden></section>
   <div class="from" id="from" hidden><div class="fromname" id="fromName"></div><div class="frommsg" id="fromMsg"></div></div>
   <div class="gamebar" id="gamebar" hidden><span class="timer" id="timer" aria-label="計時">0:00</span></div>
   <div class="board" id="board" aria-label="猜題區"></div>
@@ -548,10 +599,11 @@ function saveProgress() {
 
 /* rule level: free = anything goes; locked = keep greens, use yellows; strict = locked + must be a valid equation; daily = valid equation only */
 let friendRule = "free";
-const rule = () => (custom ? friendRule : isDaily ? "daily" : mode);
+const rule = () => (isBattle ? (B.room && B.room.rule) || "free" : custom ? friendRule : isDaily ? "daily" : mode);
 const RULE_TIP = { free: "", locked: " · 綠色留原位、黃色要用上", strict: " · 綠黃要用上、必須是成立的等式", daily: " · 必須是成立的等式" };
 function baseStatus() {
   const tag = RULE_TIP[rule()];
+  if (isBattle) return `對戰 · 第 ${pNo} 回合 · ${MODE_NAME[rule()]}` + tag;
   if (custom) return `朋友出的題目 · ${MODE_NAME[friendRule]}` + tag;
   if (isDaily) return `Daily #${pNo} · ${dailyDate(pNo)}` + tag;
   return `${MODE_NAME[mode]} · ${DIFF_NAME[diff]} #${pNo}` + tag;
@@ -606,8 +658,8 @@ function render(animateRow = -1) {
 /* start puzzle n of mode m ("friend" for a friend's code) */
 function startGame(m, n, ans, key) {
   stopClock();
-  answer = ans; pNo = n; pKey = key; custom = m === "friend"; isDaily = m === "daily";
-  if (!custom) { const [r, d] = m.split(":"); mode = r; if (d) diff = d; }
+  answer = ans; pNo = n; pKey = key; custom = m === "friend"; isDaily = m === "daily"; isBattle = m === "battle";
+  if (!custom && !isBattle) { const [r, d] = m.split(":"); mode = r; if (d) diff = d; }
   guesses = []; cur = Array(COLS).fill(""); pos = 0; done = false; keyState = {}; fin = { t: 0, w: 0 };
   if (!custom) showFrom("", "");
   let p = store.get(key, null);
@@ -652,6 +704,11 @@ function press(k) {
   if (panelId === "maker") {
     if (k === "Enter") return $("makeBtn").click();
     mpos = editRow(mk, mpos, k); $("makeOut").hidden = true; return renderMaker();
+  }
+  if (view === "battle" && !panelOpen) {
+    if ((bState() || {}).phase !== "set") return;
+    if (k === "Enter") return submitBattleEq();
+    B.pos = editRow(B.mk, B.pos, k); B.err = ""; return paintBattle();
   }
   if (view !== "game" || done || panelOpen) return;
   if (ALPHA.includes(k) && !startT) { startT = Date.now(); segT = startT; } // the clock starts at the first keystroke
@@ -700,7 +757,8 @@ function submit(replay = false) {
   if (replay) return;
   if (done) { actMs = playMs(); segT = 0; fin = { t: Date.now(), w: win ? 1 : 0 }; showResult(true); }
   render(row);
-  if (done) onFinishLB(); else cloudSave(pKey);
+  if (done && isBattle) postBattleResult();
+  else if (done) onFinishLB(); else cloudSave(pKey);
 }
 
 /* ---------- views: puzzle picker vs. game ---------- */
@@ -708,10 +766,12 @@ function setView(v) { view = v; applyLayout(); }
 function applyLayout() {
   const game = !panelOpen && view === "game";
   $("picker").hidden = panelOpen || view !== "picker";
+  $("battle").hidden = panelOpen || view !== "battle";
+  const bSet = !panelOpen && view === "battle" && (bState() || {}).phase === "set";
   $("board").hidden = !game; $("status").hidden = !game; $("gamebar").hidden = !game; paintTimer();
   $("result").hidden = !game || !done;
   $("from").hidden = !game || (!curFrom[0] && !curFrom[1]);
-  $("keys").hidden = !(game || panelId === "maker");
+  $("keys").hidden = !(game || panelId === "maker" || bSet);
   $("btnPick").hidden = view !== "game";
   paintKeys();
 }
@@ -789,7 +849,7 @@ $("picker").addEventListener("click", e => {
     calMonth = d.toISOString().slice(0, 7); return renderCalendar();
   }
 });
-function showPicker() { stopClock(); clearHash(); custom = false; showFrom("", ""); setPanel(null); setView("picker"); renderPicker(); syncModes(); }
+function showPicker() { stopClock(); clearHash(); custom = false; isBattle = false; showFrom("", ""); setPanel(null); setView("picker"); renderPicker(); syncModes(); }
 
 /* ---------- keypad ---------- */
 function buildKeys() {
@@ -828,7 +888,7 @@ function setPanel(id) { // id = panel to show, or null to go back
   if (id === "maker") renderMaker();
   if (id === "stats") renderStats();
   if (id === "ranks") { if (!lbKeep) lbDay = isDaily && view === "game" ? pNo : 0; lbKeep = false; renderAcct(); renderRanks(); }
-  if (id === "challenge") $("codeIn").focus();
+  if (id === "challenge") renderLobby();
   if (!id && view === "picker") renderPicker();
 }
 Object.entries(PANELS).forEach(([btn, id]) => $(btn).onclick = () => setPanel($(id).hidden ? id : null));
@@ -856,7 +916,7 @@ function showFrom(name, msg) {
 const clearHash = () => { try { if (location.hash) history.replaceState(null, "", location.pathname + location.search); } catch (e) {} };
 function syncModes() {
   document.querySelectorAll(".mode").forEach(b => {
-    const on = !custom && b.dataset.mode === mode;
+    const on = !custom && !isBattle && view !== "battle" && b.dataset.mode === mode;
     b.classList.toggle("on", on); b.setAttribute("aria-pressed", on);
   });
 }
@@ -961,7 +1021,7 @@ $("btnStats2").onclick = () => setPanel("stats");
 /* ---------- share result ---------- */
 const EMO = { g: "🟩", y: "🟨", r: "🟥" };
 function shareText() {
-  const label = custom ? `朋友題 ${MODE_NAME[friendRule]}` : isDaily ? `Daily #${pNo}` : `${MODE_NAME[mode]} · ${DIFF_NAME[diff]} #${pNo}`;
+  const label = isBattle ? `對戰第 ${pNo} 回合` : custom ? `朋友題 ${MODE_NAME[friendRule]}` : isDaily ? `Daily #${pNo}` : `${MODE_NAME[mode]} · ${DIFF_NAME[diff]} #${pNo}`;
   const grid = guesses.map(x => x.res.map(c => EMO[c]).join("")).join("\n");
   const link = custom ? SITE + "#q-" + encode(answer) + RULE_CH[friendRule] : SITE;
   return `Ninequal ${label} ${fin.w ? guesses.length : "X"}/6\n${grid}\n${link}`;
@@ -1019,7 +1079,9 @@ async function initLB() {
         await syncAll();
       }
       renderAcct(); if (panelId === "ranks") renderRanks();
+      if (panelId === "challenge") renderLobby();
       paintResultLB();
+      if (u && pendingJoin) joinBattle(pendingJoin);
     });
   } catch (e) {
     lbFail = true; renderAcct(); if (panelId === "ranks") renderRanks();
@@ -1103,6 +1165,7 @@ async function signOutAll() {
     ks.forEach(k => localStorage.removeItem(k));
   } catch (e) {}
   lbNote("");
+  closeBattle();
   await fb.auth().signOut();
   showPicker();
 }
@@ -1414,6 +1477,11 @@ async function renderRanks() {
 function paintResultLB() {
   const el = $("resultLB"); if (!el) return;
   el.innerHTML = "";
+  if (isBattle && done && view === "game") {
+    el.hidden = false;
+    const b = document.createElement("button"); b.type = "button"; b.className = "tb primary"; b.textContent = "回到對戰看結果";
+    b.onclick = () => { stopClock(); isBattle = false; setView("battle"); paintBattle(); }; el.appendChild(b); return;
+  }
   el.hidden = !(LB_ON && fb && done && isDaily);
   if (el.hidden) return;
   if (!me) {
@@ -1446,6 +1514,206 @@ document.addEventListener("visibilitychange", () => {
   else if (hidPaused) { hidPaused = false; if (view === "game" && !done && startT) segT = Date.now(); paintTimer(); } // back on the page: keep counting right away
 });
 
+/* ---------- 對戰 (battle): two friends, each round both set a puzzle for the other, fewer guesses wins, then less time ---------- */
+const ROOM_CH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const BEST_NAME = { 3: "三戰兩勝", 5: "五戰三勝", 7: "七戰四勝" };
+const B = { code: "", room: null, eq: {}, res: {}, unsub: [], mk: Array(COLS).fill(""), pos: 0, err: "", busy: false };
+let isBattle = false, battleRound = 0, pendingJoin = "";
+const bNeed = () => ((B.room && B.room.bestOf) || 3) / 2 + 0.5;
+const roomRef = code => fdb.collection("rooms").doc(code);
+function bNote(t, ok) { const n = $("bNote"); n.textContent = t || ""; n.hidden = !t; n.className = "note " + (ok ? "ok" : "err"); }
+
+/* who won one round: lower score (guesses, 7 if not solved) wins, then less time; both unsolved or identical = no result */
+function roundWinner(a, b) {
+  if (!a || !b) return null;
+  const sa = a.w ? a.g : 7, sb = b.w ? b.g : 7;
+  if (sa === 7 && sb === 7) return "draw";
+  if (sa !== sb) return sa < sb ? "a" : "b";
+  if (a.ms !== b.ms) return a.ms < b.ms ? "a" : "b";
+  return "draw";
+}
+/* everything about the match, from my point of view */
+function bState() {
+  const room = B.room; if (!room || !me) return null;
+  const mine = me.uid, opp = room.host === mine ? room.guest : room.host;
+  const rounds = []; let myW = 0, opW = 0, r = 1;
+  while (B.res[`${r}_${mine}`] && opp && B.res[`${r}_${opp}`]) {
+    const a = B.res[`${r}_${mine}`], b = B.res[`${r}_${opp}`], w = roundWinner(a, b);
+    if (w === "a") myW++; else if (w === "b") opW++;
+    rounds.push({ r, a, b, w, myEq: B.eq[`${r}_${mine}`], opEq: B.eq[`${r}_${opp}`] });
+    r++;
+  }
+  const need = bNeed(), over = myW >= need || opW >= need;
+  let phase;
+  if (!opp) phase = "join";
+  else if (over) phase = "over";
+  else if (!B.eq[`${r}_${mine}`]) phase = "set";
+  else if (!B.eq[`${r}_${opp}`]) phase = "waitEq";
+  else if (!B.res[`${r}_${mine}`]) phase = "solve";
+  else phase = "waitRes";
+  const isHost = room.host === mine;
+  return { mine, opp, rounds, myW, opW, need, over, phase, r, myName: isHost ? room.hostName : room.guestName, opName: isHost ? room.guestName : room.hostName };
+}
+
+function closeBattle() { B.unsub.forEach(f => { try { f(); } catch (e) {} }); B.unsub = []; B.code = ""; B.room = null; B.eq = {}; B.res = {}; }
+function openBattle(code) {
+  closeBattle();
+  B.code = code; store.set("battle", code);
+  B.mk = Array(COLS).fill(""); B.pos = 0; B.err = "";
+  const fail = e => { bNote(e && e.code === "permission-denied" ? "讀不到對戰資料，可能是資料庫規則還沒更新。" : "連線中斷，請重新整理。"); };
+  B.unsub.push(roomRef(code).onSnapshot(d => { B.room = d.exists ? d.data() : null; paintBattle(); }, fail));
+  B.unsub.push(roomRef(code).collection("eq").onSnapshot(s => { B.eq = {}; s.forEach(d => (B.eq[d.id] = d.data())); paintBattle(); }, fail));
+  B.unsub.push(roomRef(code).collection("res").onSnapshot(s => { B.res = {}; s.forEach(d => (B.res[d.id] = d.data())); paintBattle(); }, fail));
+  setPanel(null); clearHash(); custom = false; isBattle = false; showFrom("", "");
+  setView("battle"); syncModes(); paintBattle();
+}
+async function createBattle() {
+  if (!me) return;
+  const best = +((document.querySelector('input[name="bBest"]:checked') || {}).value || 3);
+  const rl = (document.querySelector('input[name="bRule"]:checked') || {}).value || "free";
+  bNote("建立中…", true);
+  try {
+    let code = "";
+    for (let i = 0; i < 5 && !code; i++) {
+      const c = Array.from({ length: 6 }, () => ROOM_CH[Math.floor(Math.random() * ROOM_CH.length)]).join("");
+      if (!(await roomRef(c).get()).exists) code = c;
+    }
+    await roomRef(code).set({ host: me.uid, hostName: myName.slice(0, 40), guest: null, guestName: "", bestOf: best, rule: rl, at: fb.firestore.FieldValue.serverTimestamp() });
+    bNote(""); openBattle(code);
+  } catch (e) { bNote(e && e.code === "permission-denied" ? "建立失敗：資料庫規則還沒更新。" : "建立失敗，請稍後再試。"); }
+}
+async function joinBattle(code) {
+  code = (code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length !== 6) { bNote("房間代碼是 6 個字元。"); return; }
+  if (!me) { pendingJoin = code; setPanel("challenge"); bNote("請先登入，登入後會自動加入。", true); return; }
+  bNote("加入中…", true);
+  try {
+    const d = await roomRef(code).get();
+    if (!d.exists) { bNote("找不到這個房間，確認代碼有沒有打錯。"); return; }
+    const r = d.data();
+    if (r.host !== me.uid && r.guest !== me.uid) {
+      if (r.guest) { bNote("這個房間已經有兩個人了。"); return; }
+      await roomRef(code).update({ guest: me.uid, guestName: myName.slice(0, 40) });
+    }
+    bNote(""); pendingJoin = ""; openBattle(code);
+  } catch (e) { bNote(e && e.code === "permission-denied" ? "加入失敗：可能房間剛被別人加入，或資料庫規則還沒更新。" : "加入失敗，請稍後再試。"); }
+}
+async function submitBattleEq() {
+  const st = bState(); if (!st || st.phase !== "set" || B.busy) return;
+  const s = B.mk.join("");
+  if (B.mk.some(c => !c)) { B.err = "要填滿 9 格"; return paintBattle(); }
+  const err = validate(s); if (err) { B.err = err; return paintBattle(); }
+  B.busy = true; B.err = "";
+  try { await roomRef(B.code).collection("eq").doc(`${st.r}_${st.mine}`).set({ by: st.mine, r: st.r, eq: s }); B.mk = Array(COLS).fill(""); B.pos = 0; }
+  catch (e) { B.err = "送出失敗，請再試一次。"; }
+  B.busy = false; paintBattle();
+}
+function solveBattle() {
+  const st = bState(); if (!st || st.phase !== "solve") return;
+  const ans = B.eq[`${st.r}_${st.opp}`].eq;
+  battleRound = st.r;
+  startGame("battle", st.r, ans, `p:battle:${B.code}:${st.r}`);
+}
+/* the solve finished: post the result once */
+async function postBattleResult() {
+  if (!isBattle || !me || !B.code) return;
+  const p = store.get(pKey, null); if (!p || !p.t) return;
+  const id = `${battleRound}_${me.uid}`;
+  if (B.res[id]) return;
+  try {
+    await roomRef(B.code).collection("res").doc(id).set({ by: me.uid, r: battleRound, g: Math.min(6, (p.g || []).length), w: !!p.w, ms: Math.max(0, Math.min(99999999, recMs(p))) });
+  } catch (e) { syncErr(e); }
+}
+
+const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fineClock = ms => { const t = Math.floor(ms / 100); return `${Math.floor(t / 600)}:${String(Math.floor(t / 10) % 60).padStart(2, "0")}.${t % 10}`; };
+const resTxt = x => (x ? (x.w ? `${x.g} 次 · ${fineClock(x.ms)}` : `沒猜到 · ${fineClock(x.ms)}`) : "—");
+const eqTxt = e => (e ? [...e.eq].map(show).join("") : "");
+function paintBattle() {
+  if (view !== "battle") { paintResultLB(); return; }
+  const el = $("battle");
+  if (!B.room) { el.innerHTML = `<div class="bcard"><p>${B.code ? "載入對戰中…（如果一直沒出現，可能是房間不存在）" : ""}</p><button type="button" class="tb" data-bact="leave">回到選題</button></div>`; applyLayout(); return; }
+  const st = bState(); if (!st) return;
+  const room = B.room, link = SITE + "#b-" + B.code;
+  let h = `<div class="bhead">
+      <div class="bp me"><span class="bn">${esc(st.myName || "你")}</span><span class="bs">${st.myW}</span></div>
+      <div class="bmid"><b>${BEST_NAME[room.bestOf] || ""}</b><span>${MODE_NAME[room.rule] || ""} 規則</span><span class="bcode">房間 ${B.code}</span></div>
+      <div class="bp"><span class="bs">${st.opW}</span><span class="bn">${esc(st.opName || "等待中")}</span></div>
+    </div>`;
+  if (st.phase === "join") {
+    h += `<div class="bcard"><h3>等朋友加入</h3><p>把房間代碼或連結傳給朋友，他打開後按「對戰」輸入代碼就能加入。</p>
+      <div class="codeout">${B.code}</div>
+      <div class="shrow"><input id="bLink" type="text" readonly value="${esc(link)}" aria-label="對戰連結"><button type="button" class="tb primary" data-bact="copy">複製連結</button></div>
+      <p class="note" id="bCopyNote"></p></div>`;
+  } else if (st.phase === "over") {
+    const iWon = st.myW > st.opW;
+    h += `<div class="bcard bover ${iWon ? "win" : "lose"}"><h3>${iWon ? "你贏了！" : "對手贏了"}</h3><p>最終比分 ${st.myW} : ${st.opW}</p>
+      <div class="inrow"><button type="button" class="tb primary" data-bact="lobby">再開一場</button><button type="button" class="tb" data-bact="leave">回到選題</button></div></div>`;
+  } else {
+    h += `<div class="bcard"><h3>第 ${st.r} 回合</h3>`;
+    if (st.phase === "set") {
+      h += `<p>出一題給對手猜（要是成立的等式）。用下面的按鍵輸入，點格子可以改那一格。</p>
+        <div class="row" id="bRow">${B.mk.map((c, i) => `<div class="tile pick${c ? " filled" : ""}${i === B.pos ? " cur" : ""}" data-bt="${i}">${c ? esc(show(c)) : ""}</div>`).join("")}</div>
+        ${B.err ? `<p class="note err">${esc(B.err)}</p>` : ""}
+        <div class="inrow"><button type="button" class="tb" data-bact="clear">清空</button><button type="button" class="tb primary" data-bact="sendEq"${B.busy ? " disabled" : ""}>送出題目</button></div>`;
+    } else if (st.phase === "waitEq") {
+      h += `<p>你的題目送出了：<code>${esc(eqTxt(B.eq[`${st.r}_${st.mine}`]))}</code></p><p class="bwait">等對手出題…</p>`;
+    } else if (st.phase === "solve") {
+      const started = store.get(`p:battle:${B.code}:${st.r}`, null);
+      h += `<p>兩邊都出好題了，換你猜對手的題目。計時從你按下第一個鍵開始。</p><button type="button" class="tb primary big" data-bact="solve">${started ? "繼續猜" : "開始猜"}</button>`;
+    } else if (st.phase === "waitRes") {
+      h += `<p>你猜完了：<b>${resTxt(B.res[`${st.r}_${st.mine}`])}</b></p><p class="bwait">等對手猜完…</p>`;
+    }
+    h += `</div>`;
+  }
+  if (st.rounds.length) {
+    h += `<div class="bcard"><h3>回合紀錄</h3><div class="bhist">` + st.rounds.slice().reverse().map(x =>
+      `<div class="bround ${x.w === "a" ? "win" : x.w === "b" ? "lose" : "draw"}">
+        <div class="brt">第 ${x.r} 回合 · ${x.w === "a" ? "你贏" : x.w === "b" ? "對手贏" : "平手，不算"}</div>
+        <div class="brl"><span>你</span><b>${resTxt(x.a)}</b><code>${esc(eqTxt(x.opEq))}</code></div>
+        <div class="brl"><span>對手</span><b>${resTxt(x.b)}</b><code>${esc(eqTxt(x.myEq))}</code></div>
+      </div>`).join("") + `</div><p class="note">每行最後是那個人猜的題目。</p></div>`;
+  }
+  h += `<div class="inrow bfoot"><button type="button" class="tb" data-bact="leave">離開（之後可以從「對戰」回來）</button></div>`;
+  el.innerHTML = h;
+  applyLayout();
+}
+$("battle").addEventListener("click", e => {
+  const t = e.target.closest("[data-bt]");
+  if (t) { B.pos = +t.dataset.bt; return paintBattle(); }
+  const b = e.target.closest("[data-bact]"); if (!b) return;
+  const a = b.dataset.bact;
+  if (a === "sendEq") submitBattleEq();
+  else if (a === "clear") { B.mk = Array(COLS).fill(""); B.pos = 0; B.err = ""; paintBattle(); }
+  else if (a === "solve") solveBattle();
+  else if (a === "leave") { closeBattle(); showPicker(); }
+  else if (a === "lobby") { closeBattle(); store.set("battle", ""); showPicker(); setPanel("challenge"); }
+  else if (a === "copy") {
+    const inp = $("bLink"), n = $("bCopyNote");
+    const fb2 = () => { inp.focus(); inp.select(); n.textContent = "已選取連結，請手動複製。"; };
+    try { navigator.clipboard.writeText(inp.value).then(() => { n.textContent = "已複製連結！"; }, fb2); } catch (er) { fb2(); }
+  }
+});
+/* the lobby inside the 對戰 panel */
+function renderLobby() {
+  const acct = $("bAcct"), lobby = $("bLobby"); acct.innerHTML = "";
+  if (!LB_ON) { acct.innerHTML = `<p class="note">對戰要連線，只能在網站版（leezhi1019.github.io/ninequal）玩。</p>`; lobby.hidden = true; return; }
+  if (!fb) { acct.innerHTML = `<p class="note">${lbFail ? "連不上伺服器，請檢查網路後重新整理。" : "載入中…"}</p>`; lobby.hidden = true; return; }
+  if (!me) {
+    const p = document.createElement("p"); p.className = "note"; p.textContent = "對戰要先用 Google 登入，雙方都要登入。";
+    if (IN_APP) acct.append(p, inAppBox());
+    else { const b = document.createElement("button"); b.type = "button"; b.className = "tb primary"; b.textContent = "用 Google 登入"; b.onclick = signIn; acct.append(p, b); }
+    lobby.hidden = false; $("bCreate").disabled = true; return;
+  }
+  $("bCreate").disabled = false; lobby.hidden = false;
+  const last = store.get("battle", "");
+  $("bResume").innerHTML = last ? `<button type="button" class="tb primary" id="bResumeBtn">回到對戰（房間 ${esc(last)}）</button>` : "";
+  if (last) $("bResumeBtn").onclick = () => joinBattle(last);
+}
+$("bCreate").onclick = createBattle;
+$("bJoin").onclick = () => joinBattle($("bCodeIn").value);
+$("bCodeIn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("bJoin").click(); } });
+
 /* ---------- light / dark look ---------- */
 function syncLook() {
   const dark = document.documentElement.getAttribute("data-look") === "dark";
@@ -1464,6 +1732,8 @@ syncLook();
 /* ---------- start ---------- */
 buildBoard(); buildKeys();
 function fromHash() {
+  const bm = /^#b-([A-Za-z0-9]{6})$/.exec(location.hash || "");
+  if (bm) { pendingJoin = bm[1].toUpperCase(); clearHash(); showPicker(); setPanel("challenge"); $("bCodeIn").value = pendingJoin; if (me) joinBattle(pendingJoin); else bNote("請先登入，登入後會自動加入房間 " + pendingJoin + "。", true); return true; }
   const m = /^#q-([A-Za-z0-9]{9,10})(?:-([0-9a-fA-F]*))?(?:-([0-9a-fA-F]*))?$/.exec(location.hash || "");
   const d = m && decodeCode(m[1]);
   if (!d) return false;
