@@ -9,21 +9,15 @@
 <style>
 /* Layout: one centered column on graph paper — header, 6×9 board, status line, two-row keypad. */
 :root{
-  --bg:#EEF2F8; --grid:rgba(44,75,214,.06); --grid-major:rgba(44,75,214,.11); --glow1:rgba(44,75,214,.20); --glow2:rgba(211,155,18,.14); --glow3:rgba(46,154,88,.10); --sym:rgba(44,75,214,.09); --surface:#FFFFFF; --ink:#1B2333; --muted:#5D6880;
-  --line:#CBD3E1; --accent:#2C4BD6; --accent-ink:#FFFFFF; --key:#E3E8F1;
-  --g:#2E9A58; --y:#D39B12; --r:#CF4339; --on-state:#FFFFFF;
+  /* cream & apricot: one warm light look in every theme */
+  --bg:#F6EEE3; --grid:rgba(150,105,65,.07); --grid-major:rgba(150,105,65,.12); --glow1:rgba(238,170,120,.32); --glow2:rgba(248,214,165,.45); --glow3:rgba(222,186,150,.28); --sym:rgba(165,115,75,.11); --surface:#FFFAF3; --ink:#3D2E24; --muted:#8C7564;
+  --line:#E5D5C2; --accent:#D47F4A; --accent-ink:#FFFFFF; --key:#EFE2D1;
+  --g:#6FA56F; --y:#E0A93D; --r:#C24F45; --on-state:#FFFFFF;
   --f-display:"Space Grotesk","Noto Sans TC",system-ui,sans-serif;
   --f-body:"Noto Sans TC",system-ui,-apple-system,"PingFang TC",sans-serif;
   --f-tile:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0F131B; --grid:rgba(120,145,255,.05); --grid-major:rgba(120,145,255,.10); --glow1:rgba(110,135,255,.22); --glow2:rgba(201,148,19,.10); --glow3:rgba(51,168,98,.08); --sym:rgba(150,170,255,.08); --surface:#1A202C; --ink:#E6EAF2; --muted:#98A2B8;
-  --line:#343D50; --accent:#7D95FF; --accent-ink:#0E1220; --key:#262E3E;
-  --g:#33A862; --y:#C99413; --r:#C9443A; --on-state:#FFFFFF; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#0F131B; --grid:rgba(120,145,255,.05); --grid-major:rgba(120,145,255,.10); --glow1:rgba(110,135,255,.22); --glow2:rgba(201,148,19,.10); --glow3:rgba(51,168,98,.08); --sym:rgba(150,170,255,.08); --surface:#1A202C; --ink:#E6EAF2; --muted:#98A2B8;
-  --line:#343D50; --accent:#7D95FF; --accent-ink:#0E1220; --key:#262E3E;
-  --g:#33A862; --y:#C99413; --r:#C9443A; --on-state:#FFFFFF; color-scheme:dark}
 html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);
   background-image:
