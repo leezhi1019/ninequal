@@ -249,7 +249,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
           <li><b>Medium</b>：猜到的綠色必須留在原位，出現過的黃色字元一定要用上（看之前某排有幾個黃或綠，之後至少要用那麼多個）。</li>
           <li><b>Hard</b>：Medium 的規則，再加上必須是成立的等式（後面是 ✓）才能送出。</li>
         </ul></li>
-      <li><b>Daily</b> 每天一題，所有人同一題，固定用 Hard 規則（台灣時間換日），可以從日曆補玩以前的天數。</li>
+      <li><b>Daily</b> 每天一題，所有人同一題，只要求必須是成立的等式，不用照綠色和黃色（台灣時間換日），可以從日曆補玩以前的天數。</li>
       <li>每一題都有固定題號，所有人的 #37 都是同一題；Basic #37 和 Hard #37 是同一題，但各自記錄。每題的進度都會存在這台裝置，玩到一半離開，回來會接著玩。朋友出的題目，規則由出題的人決定。</li>
       <li>除以 0、<code>0^0</code>、大到算不完的次方都不合法。</li>
     </ul>
@@ -497,8 +497,8 @@ function saveProgress() {
 
 /* rule level: basic = anything goes; medium = keep greens, use yellows; hard = medium + must be a valid equation */
 let friendRule = "basic";
-const rule = () => (custom ? friendRule : isDaily ? "hard" : mode);
-const RULE_TIP = { basic: "", medium: " · 綠色留原位、黃色要用上", hard: " · 綠黃要用上、必須是成立的等式" };
+const rule = () => (custom ? friendRule : isDaily ? "daily" : mode);
+const RULE_TIP = { basic: "", medium: " · 綠色留原位、黃色要用上", hard: " · 綠黃要用上、必須是成立的等式", daily: " · 必須是成立的等式" };
 function baseStatus() {
   const tag = RULE_TIP[rule()];
   if (custom) return `朋友出的題目 · ${MODE_NAME[friendRule]}` + tag;
@@ -624,13 +624,13 @@ function strictError(g) {
 function submit(replay = false) {
   if (cur.some(c => !c)) { setStatus("要填滿 9 格", "err"); shake(); return; }
   const g = cur.join("");
-  if (!replay && rule() !== "basic") {
+  if (!replay && (rule() === "medium" || rule() === "hard")) {
     const se = strictError(g);
     if (se) { setStatus(se, "err"); shake(); return; }
   }
-  if (!replay && rule() === "hard") {
+  if (!replay && (rule() === "hard" || rule() === "daily")) {
     const ve = validate(g);
-    if (ve) { setStatus(`Hard：必須是成立的等式（${ve}）`, "err"); shake(); return; }
+    if (ve) { setStatus(`${MODE_NAME[rule()]}：必須是成立的等式（${ve}）`, "err"); shake(); return; }
   }
   const res = score(g, answer);
   const ok = validate(g) === null;
