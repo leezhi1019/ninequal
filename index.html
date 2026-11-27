@@ -315,6 +315,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       <button class="tb" id="btnStats2" type="button">看統計</button>
     </div>
     <div class="inrow" id="resultLB" hidden></div>
+    <div class="note err" id="syncNote" hidden></div>
     <pre class="sharetext" id="shareText" hidden></pre>
     <div class="note" id="shareNote" hidden></div>
   </div>
@@ -513,7 +514,9 @@ let diff = store.get("diff3", "easy"); if (!DIFF_NAME[diff]) diff = "easy";
 const track = () => `${mode}:${diff}`;
 let view = "picker";
 let answer = "", guesses = [], cur = Array(COLS).fill(""), pos = 0, done = false, custom = false, keyState = {};
-let pNo = 0, pKey = "", isDaily = false, fin = { t: 0, w: 0 }, replaying = false, startT = 0;
+let pNo = 0, pKey = "", isDaily = false, fin = { t: 0, w: 0 }, replaying = false, startT = 0, actMs = 0, segT = 0;
+/* play time counts only while the page is visible: actMs = finished segments, segT = start of the running one */
+const playMs = () => Math.round(actMs + (segT ? Date.now() - segT : 0));
 let panelOpen = false, panelId = null, mk = Array(COLS).fill(""), mpos = 0;
 
 /* progress per puzzle: { g: [submitted rows], c: [unsent row], t: finish time (0 = unfinished), w: 1 win / 0 lose } */
@@ -525,7 +528,7 @@ function puzzleState(m, n) {
 }
 function saveProgress() {
   if (!pKey || replaying) return;
-  store.set(pKey, { g: guesses.map(x => x.s), c: cur, t: fin.t, w: fin.w, st: startT });
+  store.set(pKey, { g: guesses.map(x => x.s), c: cur, t: fin.t, w: fin.w, st: startT, am: fin.t ? actMs : playMs() });
 }
 
 /* rule level: free = anything goes; locked = keep greens, use yellows; strict = locked + must be a valid equation; daily = valid equation only */
@@ -598,7 +601,7 @@ function startGame(m, n, ans, key) {
   if (p && Array.isArray(p.g)) for (const g of p.g) { if (done) break; if (typeof g === "string" && g.length === COLS) { cur = [...g]; submit(true); } }
   replaying = false;
   if (p && p.t) fin = { t: p.t, w: p.w ? 1 : 0 };
-  startT = (p && p.st) || 0;
+  startT = (p && p.st) || 0; actMs = (p && p.am) || 0; segT = 0;
   if (done && !fin.t) fin = { t: Date.now(), w: guesses[guesses.length - 1].s === answer ? 1 : 0 };
   cur = Array(COLS).fill(""); pos = 0;
   if (!done && p && Array.isArray(p.c) && p.c.length === COLS) {
@@ -633,7 +636,7 @@ function press(k) {
     mpos = editRow(mk, mpos, k); $("makeOut").hidden = true; return renderMaker();
   }
   if (view !== "game" || done || panelOpen) return;
-  if (!startT && ALPHA.includes(k)) startT = Date.now(); // timer for the Daily board starts at the first keystroke
+  if (ALPHA.includes(k)) { if (!startT) startT = Date.now(); if (!segT) segT = Date.now(); } // timer starts at the first keystroke, resumes on the next one
   if (k === "Enter") return submit();
   if (k === "Backspace") setStatus(baseStatus());
   pos = editRow(cur, pos, k);
@@ -677,7 +680,7 @@ function submit(replay = false) {
   else setStatus(`還有 ${ROWS - guesses.length} 次機會`);
   cur = Array(COLS).fill(""); pos = 0;
   if (replay) return;
-  if (done) { fin = { t: Date.now(), w: win ? 1 : 0 }; showResult(true); }
+  if (done) { actMs = playMs(); segT = 0; fin = { t: Date.now(), w: win ? 1 : 0 }; showResult(true); }
   render(row);
   if (done) onFinishLB();
 }
@@ -888,6 +891,9 @@ $("makeLink").onclick = () => $("makeLink").select();
 document.querySelectorAll('input[name="makeRule"]').forEach(x => x.addEventListener("change", () => { $("makeOut").hidden = true; }));
 $("makeClear").onclick = () => { mk = Array(COLS).fill(""); mpos = 0; $("makeOut").hidden = true; renderMaker(); };
 
+/* time a finished puzzle took: active time when recorded, else wall time from the first keystroke */
+const recMs = p => Math.round(p.am != null ? p.am : p.st ? Math.max(0, p.t - p.st) : 0);
+
 /* ---------- stats (computed from saved puzzles) ---------- */
 const STAT_KEYS = ["free", "locked", "strict", "daily", "friend"];
 const STAT_NAME = { ...MODE_NAME, friend: "朋友題" };
@@ -899,7 +905,7 @@ function computeStats() {
       const key = localStorage.key(i), m = /^p:(free|locked|strict|daily|friend):(.+)$/.exec(key || "");
       if (!m) continue;
       const p = store.get(key, null);
-      if (p && p.t) recs[m[1]].push({ n: +(m[2].split(":").pop()) || 0, t: p.t, w: p.w ? 1 : 0, g: (p.g || []).length, ms: p.st ? Math.max(0, p.t - p.st) : 0 });
+      if (p && p.t) recs[m[1]].push({ n: +(m[2].split(":").pop()) || 0, t: p.t, w: p.w ? 1 : 0, g: (p.g || []).length, ms: recMs(p) });
     }
   } catch (e) {}
   const out = {};
@@ -1008,6 +1014,12 @@ function signIn() {
   });
 }
 function lbNote(t) { $("lbNote").textContent = t; $("lbNote").hidden = !t; }
+function syncErr(e) {
+  const why = e && e.code === "permission-denied" ? "資料庫拒絕了這次上傳，可能是規則還沒更新" : e && /unavailable|network/i.test(e.code || e.message || "") ? "網路連不上" : "發生錯誤";
+  const msg = `成績上傳失敗（${why}），下次完成題目時會再試一次。`;
+  lbNote(msg); $("syncNote").textContent = msg; $("syncNote").hidden = false;
+}
+function syncOk() { lbNote(""); $("syncNote").hidden = true; }
 /* push this device's results: every finished Daily (create-only) + my totals */
 async function syncAll() {
   if (!me || synced) return; synced = true;
@@ -1025,9 +1037,9 @@ async function submitDaily(n, p) {
   try {
     if ((await ref.get()).exists) return;
     const g = p.w ? Math.min(6, (p.g || []).length) : 7;
-    const ms = Math.max(0, Math.min(99999999, Math.round(p.t - (p.st || p.t))));
+    const ms = Math.max(0, Math.min(99999999, recMs(p)));
     await ref.set({ name: myName.slice(0, 40), guesses: g, ms, win: !!p.w, key: g * 1e8 + ms, at: fb.firestore.FieldValue.serverTimestamp() });
-  } catch (e) {}
+  } catch (e) { syncErr(e); }
 }
 /* called when a puzzle finishes (not on replay) */
 async function onFinishLB() {
@@ -1083,7 +1095,7 @@ function computeBoards() {
       let m = /^p:(free|locked|strict):(easy|medium|hard):(\d+)$/.exec(key);
       if (m) {
         const p = store.get(key, null); if (!p || !p.t) continue;
-        const g = (p.g || []).length, w = !!p.w, ms = p.st ? Math.max(0, p.t - p.st) : 0, a = tr[`${m[1]}_${m[2]}`];
+        const g = (p.g || []).length, w = !!p.w, ms = recMs(p), a = tr[`${m[1]}_${m[2]}`];
         a[0]++; a[2] += g; a[3] += ms; lf = Math.max(lf, p.t); fins.push({ t: p.t, w });
         if (w) {
           a[1]++;
@@ -1108,6 +1120,26 @@ function computeBoards() {
   Object.values(tr).forEach(a => (a[3] = Math.round(a[3])));
   return { tr, p1, p2: r1(p2), wk, p2w: r1(p2w), mo, p2m: r1(p2m), ns: run, nb, dp, dpl, dwo, dtr, lf: Math.round(lf) };
 }
+/* playing on another device must never lower what's on the board: keep the bigger record, group by group */
+function mergeUp(a, o) {
+  const n = (x, d = 0) => (typeof x === "number" && isFinite(x) ? x : d);
+  const out = { ...a, tr: {} };
+  Object.keys(a.tr).forEach(k => {
+    const x = a.tr[k], y = Array.isArray(o.tr && o.tr[k]) && o.tr[k].length === 4 ? o.tr[k].map(v => n(v)) : [0, 0, 0, 0];
+    out.tr[k] = y[1] > x[1] || (y[1] === x[1] && y[0] > x[0]) ? y : x; // more wins, then more played
+  });
+  out.p1 = Math.max(a.p1, n(o.p1)); out.p2 = Math.max(a.p2, n(o.p2));
+  out.p2w = o.wk === a.wk ? Math.max(a.p2w, n(o.p2w)) : a.p2w;
+  out.p2m = o.mo === a.mo ? Math.max(a.p2m, n(o.p2m)) : a.p2m;
+  if (n(o.lf) > a.lf) out.ns = Math.min(n(o.ns), Math.max(a.nb, n(o.nb))); // newest device decides the running streak
+  out.nb = Math.max(a.nb, n(o.nb), out.ns);
+  if (n(o.dpl) > a.dpl) { out.dp = n(o.dp); out.dpl = n(o.dpl); out.dwo = n(o.dwo); out.dtr = n(o.dtr); }
+  out.dp = Math.max(out.dp, a.dp);
+  if (n(o.streakDay) > a.streakDay) { out.dailyStreak = n(o.dailyStreak); out.streakDay = n(o.streakDay); }
+  out.dailyBest = Math.max(a.dailyBest, n(o.dailyBest), out.dailyStreak);
+  out.lf = Math.max(a.lf, n(o.lf));
+  return out;
+}
 async function pushUser() {
   if (!me || !fdb) return;
   const b = computeBoards(), st = computeStats(), t = todayNo();
@@ -1115,13 +1147,11 @@ async function pushUser() {
   try { for (let i = 0; i < localStorage.length; i++) { const m = /^p:daily:(\d+)$/.exec(localStorage.key(i) || ""); if (m) { const p = store.get(m[0], null); if (p && p.t && p.w) won.add(+m[1]); } } } catch (e) {}
   const streakDay = won.has(t) ? t : won.has(t - 1) ? t - 1 : 0;
   try {
-    await fdb.collection("users").doc(me.uid).set({
-      name: myName.slice(0, 40), ...b,
-      dailyStreak: st.daily.streak, dailyBest: st.daily.best, streakDay,
-      updatedAt: fb.firestore.FieldValue.serverTimestamp(),
-    });
-    usersCache.t = 0;
-  } catch (e) {}
+    const ref = fdb.collection("users").doc(me.uid), old = (await ref.get()).data() || {};
+    const local = { ...b, dailyStreak: st.daily.streak, dailyBest: st.daily.best, streakDay };
+    await ref.set({ name: myName.slice(0, 40), ...mergeUp(local, old), updatedAt: fb.firestore.FieldValue.serverTimestamp() });
+    usersCache.t = 0; syncOk();
+  } catch (e) { syncErr(e); }
 }
 
 /* ---------- the boards. keys: compared left to right, smaller first (bigger-is-better values are negated); last tie-break is who finished first ---------- */
@@ -1278,6 +1308,11 @@ function paintResultLB() {
     b.onclick = () => { lbBoard = "daily"; lbDay = pNo; lbKeep = true; setPanel("ranks"); }; el.appendChild(b);
   }
 }
+
+/* pause the play timer while the page is hidden (switched tab or app, locked phone) */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && segT) { actMs = playMs(); segT = 0; saveProgress(); }
+});
 
 /* ---------- light / dark look ---------- */
 function syncLook() {
