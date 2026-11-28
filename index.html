@@ -1264,7 +1264,9 @@ function renderAcct() {
     const no = document.createElement("button"); no.type = "button"; no.className = "tb"; no.textContent = "取消"; no.onclick = renderAcct;
     ok.onclick = async () => {
       const v = inp.value.trim(); if (!v) { inp.focus(); return; }
-      myName = v.slice(0, 20); await pushUser(); renderAcct(); renderRanks();
+      myName = v.slice(0, 20); ok.disabled = true; ok.textContent = "儲存中…";
+      const okSave = await pushUser(); renderAcct(); renderRanks();
+      if (okSave) lbNote(`已改名為「${myName}」，所有排行榜和對戰都會顯示新名字。`);
     };
     inp.addEventListener("keydown", e => { if (e.key === "Enter") ok.click(); });
     el.append(inp, ok, no); inp.focus();
@@ -1347,8 +1349,8 @@ async function pushUser() {
     const ref = fdb.collection("users").doc(me.uid), old = (await ref.get()).data() || {};
     const local = { ...b, dailyStreak: st.daily.streak, dailyBest: st.daily.best, streakDay };
     await ref.set({ name: myName.slice(0, 40), ...mergeUp(local, old), updatedAt: fb.firestore.FieldValue.serverTimestamp() });
-    usersCache.t = 0; syncOk();
-  } catch (e) { syncErr(e); }
+    usersCache.t = 0; syncOk(); return true;
+  } catch (e) { syncErr(e); return false; }
 }
 
 /* ---------- the boards. keys: compared left to right, smaller first (bigger-is-better values are negated); last tie-break is who finished first ---------- */
@@ -1402,6 +1404,10 @@ async function getUsers() {
   usersCache.docs = snap.docs.map(d => ({ id: d.id, ...d.data() })); usersCache.t = Date.now();
   return usersCache.docs;
 }
+/* names: always show each player's current name from their profile row, so renaming updates old Daily scores and battles too */
+let nameMap = {};
+async function loadNames() { try { const us = await getUsers(); nameMap = {}; us.forEach(u => { if (u.name) nameMap[u.id] = u.name; }); } catch (e) {} return nameMap; }
+const nameOf = (id, fallback) => (me && id === me.uid && myName) || nameMap[id] || fallback || "玩家";
 /* rank a list: same keys and same finish time = shared place */
 function rankRows(board, users) {
   const rows = users.map(u => ({ u, s: board.stat(u) })).filter(r => board.need(r.s))
@@ -1468,10 +1474,11 @@ async function renderRanks() {
       const col = fdb.collection("daily").doc(String(lbDay)).collection("scores");
       const snap = await col.orderBy("key").limit(50).get();
       const dv = d => (d.win ? `${d.guesses} 次 · ${fmtMs(d.ms)}` : "沒猜到");
-      snap.docs.forEach((d, i) => { const x = d.data(), p = rows[i - 1]; rows.push({ id: d.id, name: x.name, val: dv(x), key: x.key, rank: p && p.key === x.key ? p.rank : i + 1 }); });
+      await loadNames();
+      snap.docs.forEach((d, i) => { const x = d.data(), p = rows[i - 1]; rows.push({ id: d.id, name: nameOf(d.id, x.name), val: dv(x), key: x.key, rank: p && p.key === x.key ? p.rank : i + 1 }); });
       if (me && !rows.some(r => r.id === me.uid)) {
         const d = await col.doc(me.uid).get();
-        if (d.exists) { const x = d.data(), c = await col.where("key", "<", x.key).get(); mine = { rank: c.size + 1, id: me.uid, name: x.name, val: dv(x) }; }
+        if (d.exists) { const x = d.data(), c = await col.where("key", "<", x.key).get(); mine = { rank: c.size + 1, id: me.uid, name: nameOf(me.uid, x.name), val: dv(x) }; }
       }
     } else {
       const all = rankRows(board, await getUsers());
@@ -1571,7 +1578,7 @@ function bState() {
   else if (!B.res[`${r}_${mine}`]) phase = "solve";
   else phase = "waitRes";
   const isHost = room.host === mine;
-  return { mine, opp, rounds, myW, opW, need, over, phase, r, myName: isHost ? room.hostName : room.guestName, opName: isHost ? room.guestName : room.hostName };
+  return { mine, opp, rounds, myW, opW, need, over, phase, r, myName: nameOf(mine, isHost ? room.hostName : room.guestName), opName: opp ? nameOf(opp, isHost ? room.guestName : room.hostName) : "" };
 }
 
 function closeBattle() { B.unsub.forEach(f => { try { f(); } catch (e) {} }); B.unsub = []; B.code = ""; B.room = null; B.eq = {}; B.res = {}; }
@@ -1585,6 +1592,7 @@ function openBattle(code) {
   B.unsub.push(roomRef(code).collection("res").onSnapshot(s => { B.res = {}; s.forEach(d => (B.res[d.id] = d.data())); paintBattle(); }, fail));
   setPanel(null); clearHash(); custom = false; isBattle = false; showFrom("", "");
   setView("battle"); syncModes(); paintBattle();
+  loadNames().then(paintBattle);
 }
 async function createBattle() {
   if (!me) return;
@@ -1750,10 +1758,11 @@ async function loadHistory(force) {
       fdb.collection("rooms").where("host", "==", me.uid).limit(30).get(),
       fdb.collection("rooms").where("guest", "==", me.uid).limit(30).get(),
     ]);
+    await loadNames();
     const rooms = new Map();
     [...h.docs, ...g.docs].forEach(d => { const x = d.data(); if (x.host === me.uid || x.guest === me.uid) rooms.set(d.id, x); });
     const rows = await Promise.all([...rooms].map(async ([code, x]) => {
-      const opp = x.host === me.uid ? x.guest : x.host, oppName = x.host === me.uid ? x.guestName : x.hostName;
+      const opp = x.host === me.uid ? x.guest : x.host, oppName = nameOf(opp, x.host === me.uid ? x.guestName : x.hostName);
       const at = x.at && x.at.toMillis ? x.at.toMillis() : 0;
       let t = { a: 0, b: 0, played: 0, over: false };
       if (opp) {
